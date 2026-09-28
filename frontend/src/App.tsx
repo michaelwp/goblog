@@ -3,8 +3,10 @@ import { Fragment, type ReactNode } from "react";
 import { Contents } from "./components/Article";
 import { renderBlock } from "./components/Markdown";
 import { LanguageMenu, Layout, MainMenu, SearchForm, TitleBar, type Translation } from "./components/Layout";
+import { categoryHref, categoryName, PostMeta, TagLinks, tagHref } from "./components/Taxonomy";
 import { parseBody, readingMinutes, sections } from "./lib/article";
 import { formatDate } from "./lib/format";
+import { queryString } from "./lib/query";
 import { type Dictionary, format, getDictionary, type Locale, locales } from "./lib/i18n";
 import { AboutPage } from "./pages/About";
 import type { PageData, Post, PublicPageData } from "./types";
@@ -32,10 +34,11 @@ function otherLocales(lang: Locale, href: (l: Locale) => string): Translation[] 
 
 type WithT<P> = P & { t: Dictionary };
 
-function HomePage({ lang, theme, year, posts, t }: WithT<Extract<PageData, { page: "home" }>>) {
-  const [featured, ...recent] = posts;
+function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Extract<PageData, { page: "home" }>>) {
+  const [featured] = posts;
+  const onlyOther = groups.length === 1 && groups[0].category.slug === "";
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} />}>
+    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
       <section className="mp-banner">
         <div className="mp-hero-row">
           <h1 className="mp-welcome">{format(t.welcome, { site: t.siteTitle })}</h1>
@@ -48,7 +51,7 @@ function HomePage({ lang, theme, year, posts, t }: WithT<Extract<PageData, { pag
       {posts.length === 0 ? (
         <p>{t.noPosts}</p>
       ) : (
-        <div className="mp-columns">
+        <>
           <section className="mp-box mp-featured">
             <h2>{t.featured}</h2>
             <div className="mp-box-body">
@@ -57,36 +60,56 @@ function HomePage({ lang, theme, year, posts, t }: WithT<Extract<PageData, { pag
                 <a href={postHref(featured)}>{featured.title}</a>
               </h3>
               <p className="mp-featured-summary">{featured.summary}</p>
+              <PostMeta post={featured} lang={lang} categories={categories} />
               <a className="mp-featured-more" href={postHref(featured)}>
                 {t.fullArticle}
               </a>
             </div>
           </section>
-          <section className="mp-box mp-recent">
-            <h2>{t.recentArticles}</h2>
-            <div className="mp-box-body">
-              <ul>
-                {(recent.length > 0 ? recent : posts).map((p) => (
-                  <li key={p.slug}>
-                    <a href={postHref(p)}>{p.title}</a> <span className="mp-meta">{formatDate(p.publishedAt, lang)}</span>
-                  </li>
-                ))}
-              </ul>
+
+          <section className="mp-groups" aria-label={t.browseByCategory}>
+            {!onlyOther && <h2 className="mp-section-title">{t.browseByCategory}</h2>}
+            <div className="mp-group-grid">
+              {groups.map(({ category, posts: items }) => {
+                const title = category.slug ? category.name : onlyOther ? t.recentArticles : t.otherArticles;
+                return (
+                  <section key={category.slug || "other"} className="mp-group">
+                    <h3 className="mp-group-title">
+                      {category.slug ? <a href={categoryHref(lang, category.slug)}>{title}</a> : title}
+                      <span className="mp-group-count">{category.count}</span>
+                    </h3>
+                    <ul>
+                      {items.map((p) => (
+                        <li key={p.slug}>
+                          <a href={postHref(p)}>{p.title}</a>
+                          <span className="mp-meta">{formatDate(p.publishedAt, lang)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {category.slug && category.count > items.length && (
+                      <a className="mp-group-more" href={categoryHref(lang, category.slug)}>
+                        {format(t.viewAll, { n: category.count })}
+                      </a>
+                    )}
+                  </section>
+                );
+              })}
             </div>
           </section>
-        </div>
+        </>
       )}
     </Layout>
   );
 }
 
-function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, t }: WithT<Extract<PageData, { page: "post" }>>) {
+function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
   const blocks = parseBody(post.body);
   const toc = sections(blocks);
   const translations = availableLanguages.filter((l) => l !== lang).map((l) => ({ lang: l, href: `/${l}/posts/${post.slug}` }));
   const published = formatDate(post.publishedAt, lang);
 
   const contents = toc.length > 0 && <Contents t={t} sections={toc} />;
+  const categoryLabel = post.category ? categoryName(categories, post.category) : "";
 
   return (
     <Layout
@@ -94,7 +117,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
       theme={theme}
       year={year}
       t={t}
-      sidebar={contents || <MainMenu lang={lang} t={t} />}
+      sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}
       footer={<p>{format(t.footerPublished, { date: published })}</p>}
     >
       {preview && (
@@ -117,6 +140,13 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
           {contents && <div className="toc-inline">{contents}</div>}
 
           {blocks.map((b, i) => renderBlock(b, i))}
+
+          {!!post.tags?.length && (
+            <footer className="article-tags">
+              <span className="article-tags-label">{t.tags}</span>
+              <TagLinks lang={lang} tags={post.tags} />
+            </footer>
+          )}
         </div>
 
         <aside className="article-aside">
@@ -127,6 +157,14 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
                   {post.title}
                 </th>
               </tr>
+              {categoryLabel && (
+                <tr>
+                  <th scope="row">{t.category}</th>
+                  <td>
+                    <a href={categoryHref(lang, post.category)}>{categoryLabel}</a>
+                  </td>
+                </tr>
+              )}
               <tr>
                 <th scope="row">{t.infoPublished}</th>
                 <td>
@@ -164,25 +202,73 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
   );
 }
 
-function SearchPage({ lang, theme, year, query, results, t }: WithT<Extract<PageData, { page: "search" }>>) {
+function SearchPage(props: WithT<Extract<PageData, { page: "search" }>>) {
+  const { lang, theme, year, scope, query, tag, category, results, tags, filtered, categories, t } = props;
   const count = results.length;
-  return (
-    <Layout lang={lang} theme={theme} year={year} t={t} query={query} sidebar={<MainMenu lang={lang} t={t} />}>
-      <TitleBar
-        t={t}
-        title={t.searchResults}
-        tab={t.search}
-        translations={otherLocales(lang, (l) => `/${l}/search${query ? `?q=${encodeURIComponent(query)}` : ""}`)}
-      />
-      <SearchForm lang={lang} t={t} query={query} className="page-search" />
+  const catName = category ? categoryName(categories, category) || category : "";
+  const title = scope === "category" ? format(t.categoryTitle, { name: catName }) : scope === "tag" ? format(t.tagTitle, { tag }) : t.searchResults;
+  const tab = scope === "category" ? t.category : scope === "tag" ? t.tags : t.search;
+  const params = (l: Locale) => {
+    const qs = queryString({ q: query, tag: scope === "tag" ? "" : tag, category: scope === "category" ? "" : category });
+    const path = scope === "category" ? categoryHref(l, category) : scope === "tag" ? tagHref(l, tag) : `/${l}/search`;
+    return qs ? `${path}?${qs}` : path;
+  };
 
-      {!query ? (
-        <p className="search-info">{t.searchPrompt}</p>
-      ) : count === 0 ? (
-        <p className="search-info">{format(t.searchNoResults, { q: query })}</p>
-      ) : (
-        <>
-          <p className="search-info">{format(count === 1 ? t.searchCountOne : t.searchCount, { n: count, q: query })}</p>
+  let summary: string;
+  if (!filtered) summary = t.searchPrompt;
+  else if (count === 0) summary = query && !tag && !category ? format(t.searchNoResults, { q: query }) : t.noMatches;
+  else if (query && !tag && !category) summary = format(count === 1 ? t.searchCountOne : t.searchCount, { n: count, q: query });
+  else summary = format(count === 1 ? t.filteredCountOne : t.filteredCount, { n: count });
+
+  return (
+    <Layout lang={lang} theme={theme} year={year} t={t} query={query} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
+      <TitleBar t={t} title={title} tab={tab} translations={otherLocales(lang, params)} />
+      {scope === "category" && <p className="from-site">{format(t.categoryIntro, { name: catName })}</p>}
+      {scope === "tag" && <p className="from-site">{format(t.tagIntro, { tag: `#${tag}` })}</p>}
+
+      <form className="browse-filters" role="search" action={`/${lang}/search`} method="get">
+        <label className="browse-field browse-text">
+          <span>{t.searchText}</span>
+          <input type="search" name="q" defaultValue={query} placeholder={t.searchPlaceholder} />
+        </label>
+        <label className="browse-field">
+          <span>{t.category}</span>
+          <select name="category" defaultValue={category}>
+            <option value="">{t.allCategories}</option>
+            {(categories ?? []).map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.name} ({c.count})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="browse-field">
+          <span>{t.tags}</span>
+          <select name="tag" defaultValue={tag}>
+            <option value="">{t.allTags}</option>
+            {tags.map((x) => (
+              <option key={x.tag} value={x.tag}>
+                #{x.tag} ({x.count})
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="browse-actions">
+          <button type="submit" className="browse-submit">
+            {t.applyFilters}
+          </button>
+          {filtered && (
+            <a className="browse-clear" href={`/${lang}/search`}>
+              {t.clearFilters}
+            </a>
+          )}
+        </div>
+      </form>
+
+      <p className="search-info">{summary}</p>
+
+      {filtered ? (
+        count > 0 && (
           <ul className="search-results">
             {results.map((p) => (
               <li key={p.slug}>
@@ -190,20 +276,46 @@ function SearchPage({ lang, theme, year, query, results, t }: WithT<Extract<Page
                   {highlight(p.title, query)}
                 </a>
                 <p className="result-snippet">{highlight(p.summary, query)}</p>
-                <p className="result-meta">{formatDate(p.publishedAt, lang)}</p>
+                <div className="result-meta">
+                  <span>{formatDate(p.publishedAt, lang)}</span>
+                  <PostMeta post={p} lang={lang} categories={categories} />
+                </div>
               </li>
             ))}
           </ul>
-        </>
+        )
+      ) : (
+        <div className="browse-overview">
+          {!!categories?.length && (
+            <section>
+              <h2 className="side-heading">{t.browseByCategory}</h2>
+              <ul className="category-cloud">
+                {categories.map((c) => (
+                  <li key={c.slug}>
+                    <a href={categoryHref(lang, c.slug)}>
+                      {c.name} <span>{c.count}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {tags.length > 0 && (
+            <section>
+              <h2 className="side-heading">{t.popularTags}</h2>
+              <TagLinks lang={lang} tags={tags.map((x) => x.tag)} className="tag-list tag-cloud" />
+            </section>
+          )}
+        </div>
       )}
     </Layout>
   );
 }
 
-function NotFoundPage({ lang, theme, year, t }: WithT<Extract<PageData, { page: "notFound" }>>) {
+function NotFoundPage({ lang, theme, year, categories, t }: WithT<Extract<PageData, { page: "notFound" }>>) {
   const [before, after] = t.notFoundHint.split("{link}");
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} />}>
+    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
       <TitleBar t={t} title={t.notFoundTitle} tab={t.article} translations={[]} />
       <div className="notice">
         <p>
@@ -248,11 +360,19 @@ export function head(props: PublicPageData): { title: string; description: strin
       return { title: `${t.siteTitle} – ${t.siteTagline}`, description: t.siteDescription };
     case "post":
       return { title: `${props.post.title} – ${t.siteTitle}`, description: props.post.summary };
-    case "search":
+    case "search": {
+      if (props.scope === "category") {
+        const name = categoryName(props.categories, props.category) || props.category;
+        return { title: `${name} – ${t.siteTitle}`, description: format(t.categoryIntro, { name }) };
+      }
+      if (props.scope === "tag") {
+        return { title: `#${props.tag} – ${t.siteTitle}`, description: format(t.tagIntro, { tag: `#${props.tag}` }) };
+      }
       return {
         title: `${props.query ? `${props.query} – ` : ""}${t.searchResults} – ${t.siteTitle}`,
         description: t.siteDescription,
       };
+    }
     case "notFound":
       return { title: `${t.notFoundTitle} – ${t.siteTitle}`, description: t.notFoundBody };
     case "about":

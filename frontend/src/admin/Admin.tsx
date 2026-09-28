@@ -4,16 +4,18 @@ import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useRef, use
 
 import { countriesFor, flagEmoji } from "../lib/countries";
 import { formatDate } from "../lib/format";
+import { queryString } from "../lib/query";
 import { getDictionary, type Locale } from "../lib/i18n";
 import type { AdminForm, BulkResult, BulkVerb, PageData, Post, PostStatus } from "../types";
 import { PasswordFields } from "./PasswordField";
 import { PhotoField } from "./PhotoField";
 import { RichEditor } from "./RichEditor";
+import { TagInput } from "./TagInput";
 import { type AutosaveState, useAutosave } from "./useAutosave";
 
 type Page<K extends PageData["page"]> = Extract<PageData, { page: K }>;
 
-type Section = "articles" | "profile" | "password";
+type Section = "articles" | "categories" | "profile" | "password";
 
 function AdminLayout(props: { children: ReactNode; signedIn?: boolean; section?: Section }) {
   const { children, signedIn = true, section } = props;
@@ -28,6 +30,9 @@ function AdminLayout(props: { children: ReactNode; signedIn?: boolean; section?:
           <nav className="admin-nav">
             <a href="/admin" aria-current={section === "articles" ? "page" : undefined}>
               Articles
+            </a>
+            <a href="/admin/categories" aria-current={section === "categories" ? "page" : undefined}>
+              Categories
             </a>
             <a href="/admin/profile" aria-current={section === "profile" ? "page" : undefined}>
               Profile
@@ -170,12 +175,25 @@ function bulkMessage(r: BulkResult): string {
   return r.articles === 0 && !r.skipped ? "Nothing changed." : `${done} ${what}.${skipped}`;
 }
 
-export function AdminList({ posts, languages, notice, filter, bulk }: Page<"adminList">) {
+export function AdminList({ posts, languages, notice, filter, bulk, categories, categoryFilter }: Page<"adminList">) {
   // Group translations under one row per article, newest first.
   const groups = new Map<string, Post[]>();
   for (const p of posts) groups.set(p.slug, [...(groups.get(p.slug) ?? []), p]);
   const count = (status: "" | PostStatus) => (status ? posts.filter((p) => p.status === status).length : posts.length);
-  const shown = [...groups].filter(([, ts]) => !filter || ts.some((p) => p.status === filter));
+  // Category is shared by an article's translations, so any one says it.
+  const known = new Set(categories.map((c) => c.slug));
+  const categoryOf = (ts: Post[]) => (ts[0].category && known.has(ts[0].category) ? ts[0].category : "none");
+  const shown = [...groups].filter(
+    ([, ts]) => (!filter || ts.some((p) => p.status === filter)) && (!categoryFilter || categoryOf(ts) === categoryFilter),
+  );
+  // The list is grouped by category (alphabetical), then "No category".
+  const sections = [...categories, { slug: "none", name: "No category" }]
+    .map((c) => ({ slug: c.slug, name: c.name, items: shown.filter(([, ts]) => categoryOf(ts) === c.slug) }))
+    .filter((sec) => sec.items.length > 0);
+  const listHref = (show: string, category: string) => {
+    const q = queryString({ show, category });
+    return q ? `/admin?${q}` : "/admin";
+  };
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const shownSlugs = shown.map(([slug]) => slug);
@@ -187,6 +205,95 @@ export function AdminList({ posts, languages, notice, filter, bulk }: Page<"admi
       return next;
     });
   const selectedTranslations = shown.filter(([slug]) => selected.has(slug)).reduce((n, [, ts]) => n + ts.length, 0);
+
+  // One article row, covering all its translations.
+  const renderRow = ([slug, translations]: [string, Post[]]) => {
+    const main = translations.find((p) => p.lang === languages[0]) ?? translations[0];
+    const missing = languages.filter((l) => !translations.some((p) => p.lang === l));
+    const live = translations.find((p) => p.status === "published");
+    const statuses = new Set(translations.map((p) => p.status));
+    const checked = selected.has(slug);
+    return (
+      <li key={slug} className={`admin-row${checked ? " is-selected" : ""}`}>
+        <input
+          type="checkbox"
+          name="slug"
+          value={slug}
+          className="row-check"
+          checked={checked}
+          onChange={() => toggle(slug)}
+          aria-label={`Select “${main.title}”`}
+        />
+        <div className="admin-row-main">
+          <a className="admin-row-title" href={`/admin/posts/${slug}/${main.lang}`}>
+            {main.title}
+          </a>
+          <p className="admin-row-meta">
+            <code>{slug}</code> · {formatDate(main.publishedAt, main.lang)}
+            {!!main.tags?.length && <span className="admin-row-tags"> · {main.tags.map((tag) => `#${tag}`).join(" ")}</span>}
+          </p>
+        </div>
+        <div className="admin-langs">
+          {translations.map((p) => (
+            <a
+              key={p.lang}
+              className={`lang-chip chip-${p.status}`}
+              href={`/admin/posts/${slug}/${p.lang}`}
+              title={`Edit ${languageName(p.lang)} (${STATUS_LABEL[p.status].toLowerCase()}${p.status === "published" && p.draft ? ", with unpublished changes" : ""})`}
+            >
+              {p.lang.toUpperCase()}
+              {p.status !== "published" && <span className="chip-status">{STATUS_LABEL[p.status]}</span>}
+              {p.status === "published" && p.draft && <span className="chip-status chip-edited-label">Edited</span>}
+            </a>
+          ))}
+          {missing.map((l) => (
+            <a
+              key={l}
+              className="lang-chip lang-chip-missing"
+              href={`/admin/new?slug=${slug}&lang=${l}&from=${main.lang}`}
+              title={`Add ${languageName(l)} translation`}
+            >
+              + {l.toUpperCase()}
+            </a>
+          ))}
+          {live ? (
+            <a className="admin-view" href={`/${live.lang}/posts/${slug}`} target="_blank" rel="noreferrer" title="View on site">
+              ↗
+            </a>
+          ) : (
+            <span className="admin-view admin-view-off" title="Not published in any language">
+              ↗
+            </span>
+          )}
+          <details className="row-menu">
+            <summary aria-label={`Actions for “${main.title}”`} title="Actions">
+              ⋯
+            </summary>
+            <div className="row-menu-panel">
+              {!(statuses.size === 1 && statuses.has("published")) && (
+                <button type="submit" name="action" value={`publish:${slug}`}>
+                  Publish
+                </button>
+              )}
+              {statuses.has("published") && (
+                <button type="submit" name="action" value={`disable:${slug}`}>
+                  Disable
+                </button>
+              )}
+              {!(statuses.size === 1 && statuses.has("draft")) && (
+                <button type="submit" name="action" value={`draft:${slug}`}>
+                  Move to drafts
+                </button>
+              )}
+              <button type="submit" name="action" value={`delete:${slug}`} className="row-menu-danger">
+                Delete
+              </button>
+            </div>
+          </details>
+        </div>
+      </li>
+    );
+  };
 
   // Confirm destructive actions; the clicked button says which action and
   // (for a row menu) which article.
@@ -234,13 +341,37 @@ export function AdminList({ posts, languages, notice, filter, bulk }: Page<"admi
         </p>
       )}
 
-      <nav className="admin-filters" aria-label="Filter by status">
-        {FILTERS.map((f) => (
-          <a key={f.value} href={f.value ? `/admin?show=${f.value}` : "/admin"} aria-current={filter === f.value ? "page" : undefined}>
-            {f.label} <span>{count(f.value)}</span>
-          </a>
-        ))}
-      </nav>
+      <div className="admin-filter-row">
+        <nav className="admin-filters" aria-label="Filter by status">
+          {FILTERS.map((f) => (
+            <a key={f.value} href={listHref(f.value, categoryFilter)} aria-current={filter === f.value ? "page" : undefined}>
+              {f.label} <span>{count(f.value)}</span>
+            </a>
+          ))}
+        </nav>
+        <form className="admin-category-filter" method="get" action="/admin">
+          {filter && <input type="hidden" name="show" value={filter} />}
+          <select
+            name="category"
+            defaultValue={categoryFilter}
+            aria-label="Filter by category"
+            onChange={(e) => (window.location.href = listHref(filter, e.target.value))}
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.name}
+              </option>
+            ))}
+            <option value="none">No category</option>
+          </select>
+          <noscript>
+            <button type="submit" className="btn btn-sm btn-secondary">
+              Filter
+            </button>
+          </noscript>
+        </form>
+      </div>
 
       {groups.size === 0 ? (
         <div className="admin-card admin-empty">
@@ -250,10 +381,11 @@ export function AdminList({ posts, languages, notice, filter, bulk }: Page<"admi
           </a>
         </div>
       ) : shown.length === 0 ? (
-        <p className="admin-muted admin-none">No {FILTERS.find((f) => f.value === filter)?.label.toLowerCase()} articles.</p>
+        <p className="admin-muted admin-none">No articles match these filters.</p>
       ) : (
         <form method="post" action="/admin/bulk" onSubmit={confirmAction}>
           <input type="hidden" name="show" value={filter} />
+          {categoryFilter && <input type="hidden" name="category" value={categoryFilter} />}
           <div className={`bulk-bar${selected.size ? " has-selection" : ""}`}>
             <label className="bulk-check">
               <input
@@ -288,94 +420,14 @@ export function AdminList({ posts, languages, notice, filter, bulk }: Page<"admi
             </div>
           </div>
 
-          <ul className="admin-list">
-            {shown.map(([slug, translations]) => {
-              const main = translations.find((p) => p.lang === languages[0]) ?? translations[0];
-              const missing = languages.filter((l) => !translations.some((p) => p.lang === l));
-              const live = translations.find((p) => p.status === "published");
-              const statuses = new Set(translations.map((p) => p.status));
-              const checked = selected.has(slug);
-              return (
-                <li key={slug} className={`admin-row${checked ? " is-selected" : ""}`}>
-                  <input
-                    type="checkbox"
-                    name="slug"
-                    value={slug}
-                    className="row-check"
-                    checked={checked}
-                    onChange={() => toggle(slug)}
-                    aria-label={`Select “${main.title}”`}
-                  />
-                  <div className="admin-row-main">
-                    <a className="admin-row-title" href={`/admin/posts/${slug}/${main.lang}`}>
-                      {main.title}
-                    </a>
-                    <p className="admin-row-meta">
-                      <code>{slug}</code> · {formatDate(main.publishedAt, main.lang)}
-                    </p>
-                  </div>
-                  <div className="admin-langs">
-                    {translations.map((p) => (
-                      <a
-                        key={p.lang}
-                        className={`lang-chip chip-${p.status}`}
-                        href={`/admin/posts/${slug}/${p.lang}`}
-                        title={`Edit ${languageName(p.lang)} (${STATUS_LABEL[p.status].toLowerCase()}${p.status === "published" && p.draft ? ", with unpublished changes" : ""})`}
-                      >
-                        {p.lang.toUpperCase()}
-                        {p.status !== "published" && <span className="chip-status">{STATUS_LABEL[p.status]}</span>}
-                        {p.status === "published" && p.draft && <span className="chip-status chip-edited-label">Edited</span>}
-                      </a>
-                    ))}
-                    {missing.map((l) => (
-                      <a
-                        key={l}
-                        className="lang-chip lang-chip-missing"
-                        href={`/admin/new?slug=${slug}&lang=${l}&from=${main.lang}`}
-                        title={`Add ${languageName(l)} translation`}
-                      >
-                        + {l.toUpperCase()}
-                      </a>
-                    ))}
-                    {live ? (
-                      <a className="admin-view" href={`/${live.lang}/posts/${slug}`} target="_blank" rel="noreferrer" title="View on site">
-                        ↗
-                      </a>
-                    ) : (
-                      <span className="admin-view admin-view-off" title="Not published in any language">
-                        ↗
-                      </span>
-                    )}
-                    <details className="row-menu">
-                      <summary aria-label={`Actions for “${main.title}”`} title="Actions">
-                        ⋯
-                      </summary>
-                      <div className="row-menu-panel">
-                        {!(statuses.size === 1 && statuses.has("published")) && (
-                          <button type="submit" name="action" value={`publish:${slug}`}>
-                            Publish
-                          </button>
-                        )}
-                        {statuses.has("published") && (
-                          <button type="submit" name="action" value={`disable:${slug}`}>
-                            Disable
-                          </button>
-                        )}
-                        {!(statuses.size === 1 && statuses.has("draft")) && (
-                          <button type="submit" name="action" value={`draft:${slug}`}>
-                            Move to drafts
-                          </button>
-                        )}
-                        <button type="submit" name="action" value={`delete:${slug}`} className="row-menu-danger">
-                          Delete
-                        </button>
-                      </div>
-                    </details>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          {sections.map((sec) => (
+            <section key={sec.slug} className="admin-group">
+              <h2 className="admin-group-title">
+                {sec.name} <span>{sec.items.length}</span>
+              </h2>
+              <ul className="admin-list">{sec.items.map(renderRow)}</ul>
+            </section>
+          ))}
         </form>
       )}
     </AdminLayout>
@@ -468,7 +520,8 @@ function LanguageSwitcher(props: {
   );
 }
 
-export function AdminEdit({ mode, status, notice, form, errors, languages, otherTranslations, draftSavedAt, translations }: Page<"adminEdit">) {
+export function AdminEdit(props: Page<"adminEdit">) {
+  const { mode, status, notice, form, errors, languages, otherTranslations, draftSavedAt, translations, categories, knownTags } = props;
   // A new article becomes an existing draft when autosave first creates it.
   const [created, setCreated] = useState<{ slug: string; lang: string } | null>(null);
   const isNew = mode === "new" && !created;
@@ -647,6 +700,30 @@ export function AdminEdit({ mode, status, notice, form, errors, languages, other
           </Field>
         </div>
 
+        <div className="field-row field-row-2">
+          <Field
+            label="Category"
+            name="category"
+            error={errors.category}
+            hint={categories.length ? "Shared by all translations of this article." : "No categories yet: add them under Categories."}
+          >
+            <select name="category" defaultValue={form.category}>
+              <option value="">No category</option>
+              {categories.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {/* Not a <label>: it would forward clicks to the chips' buttons. */}
+          <div className={errors.tags ? "field has-error" : "field"}>
+            <span className="field-label">Tags</span>
+            <TagInput defaultValue={form.tags} known={knownTags} invalid={!!errors.tags} />
+            <span className={errors.tags ? "field-error" : "field-hint"}>{errors.tags || "Up to 10, shared by all translations. Press Enter or comma after each."}</span>
+          </div>
+        </div>
+
         <Field label="Title" name="title" error={errors.title}>
           <input name="title" defaultValue={form.title} required maxLength={200} />
         </Field>
@@ -731,6 +808,102 @@ function EditorField(props: { label: string; name: string; defaultValue: string;
         </span>
       )}
     </div>
+  );
+}
+
+// ---- Categories --------------------------------------------------------
+
+const CATEGORY_NOTICES = {
+  created: "Category added.",
+  renamed: "Category renamed.",
+  deleted: "Category deleted. Its articles were kept and now have no category.",
+};
+
+export function AdminCategories({ list: categories, languages, form, errors, rowErrors, rowForms, notice }: Page<"adminCategories">) {
+  const nameOf = (names: Record<string, string> | null, lang: string) => names?.[lang] ?? "";
+  const confirmDelete = (name: string, articles: number) => (e: FormEvent<HTMLFormElement>) => {
+    const what = articles ? ` Its ${plural(articles, "article")} will be kept, without a category.` : "";
+    if (!window.confirm(`Delete the category “${name}”?${what}`)) e.preventDefault();
+  };
+
+  return (
+    <AdminLayout section="categories">
+      <div className="admin-toolbar">
+        <div>
+          <h1>Categories</h1>
+          <p className="admin-muted">Group articles by topic. Each article has at most one category, shared by its translations.</p>
+        </div>
+      </div>
+
+      {notice && (
+        <p className="admin-alert admin-alert-success" role="status">
+          {CATEGORY_NOTICES[notice]}
+        </p>
+      )}
+
+      <form className="admin-card admin-form" method="post" action="/admin/categories" noValidate>
+        <h2 className="admin-section-title">Add a category</h2>
+        <div className="field-row field-row-2">
+          {languages.map((l) => (
+            <Field key={l} label={`Name (${languageName(l)})`} name={`name_${l}`} error={errors[`name_${l}`]}>
+              <input name={`name_${l}`} defaultValue={nameOf(form.names, l)} maxLength={50} required />
+            </Field>
+          ))}
+        </div>
+        <Field
+          label="Slug (optional)"
+          name="slug"
+          error={errors.slug}
+          hint={`Used in the address, e.g. /${languages[0]}/categories/web-security. Leave empty to make one from the ${languageName(languages[0])} name. It can't be changed later.`}
+        >
+          <input name="slug" defaultValue={form.slug} maxLength={50} pattern="[a-z0-9]+(-[a-z0-9]+)*" autoComplete="off" />
+        </Field>
+        <div className="admin-actions">
+          <button type="submit" className="btn btn-primary">
+            Add category
+          </button>
+        </div>
+      </form>
+
+      {categories.length === 0 ? (
+        <p className="admin-muted admin-none">No categories yet.</p>
+      ) : (
+        <ul className="category-list">
+          {categories.map((c) => {
+            const input = rowForms[c.slug]?.names ?? c.names;
+            const name = nameOf(c.names, languages[0]) || c.slug;
+            return (
+              <li key={c.slug} className={`category-row${rowErrors[c.slug] ? " has-error" : ""}`}>
+                <form className="category-row-form" method="post" action={`/admin/categories/${c.slug}`} noValidate>
+                  <div className="category-row-names">
+                    {languages.map((l) => (
+                      <label key={l} className="field">
+                        <span className="field-label">{languageName(l)}</span>
+                        <input name={`name_${l}`} defaultValue={nameOf(input, l)} maxLength={50} required />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="category-row-meta">
+                    <code>{c.slug}</code>
+                    <a href={`/admin?category=${c.slug}`}>{plural(c.articles, "article")}</a>
+                  </div>
+                  <div className="category-row-actions">
+                    <button type="submit" className="btn btn-secondary btn-sm">
+                      Save
+                    </button>
+                    <button type="submit" form={`delete-${c.slug}`} className="btn btn-quiet btn-sm row-menu-danger">
+                      Delete
+                    </button>
+                  </div>
+                </form>
+                <form id={`delete-${c.slug}`} method="post" action={`/admin/categories/${c.slug}/delete`} onSubmit={confirmDelete(name, c.articles)} hidden />
+                {rowErrors[c.slug] && <p className="field-error">{rowErrors[c.slug]}</p>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </AdminLayout>
   );
 }
 

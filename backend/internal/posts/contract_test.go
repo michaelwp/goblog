@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,7 +74,7 @@ func testStatuses(t *testing.T, r Repository) {
 	}
 	visible := func() bool {
 		list, _ := r.List(ctx, "en")
-		found, _ := r.Search(ctx, "en", "unique-zebra-word")
+		found, _ := r.Find(ctx, Filter{Lang: "en", Text: "unique-zebra-word"})
 		langs, _ := r.Languages(ctx, "status-post")
 		inList := len(list) > 0 && list[0].Slug == "status-post"
 		if inList != (len(found) == 1) || inList != (len(langs) == 1) {
@@ -135,7 +136,7 @@ func testDraftRevision(t *testing.T, r Repository) {
 	if got.Draft == nil || got.Draft.Title != "Edited title" || got.Title != live {
 		t.Fatalf("after saving a draft: title %q, draft %+v", got.Title, got.Draft)
 	}
-	if found, _ := r.Search(ctx, "en", "zebra-draft-word"); len(found) != 0 {
+	if found, _ := r.Find(ctx, Filter{Lang: "en", Text: "zebra-draft-word"}); len(found) != 0 {
 		t.Error("search finds unpublished draft text")
 	}
 	list, _ := r.List(ctx, "en")
@@ -152,6 +153,100 @@ func testDraftRevision(t *testing.T, r Repository) {
 	final, _ := r.Get(ctx, "why-ssr", "en")
 	if final.Draft != nil || final.Title != "Edited title" || final.Body != "zebra-draft-word" {
 		t.Errorf("after publishing the draft: %q, draft %+v", final.Title, final.Draft)
+	}
+}
+
+// testTaxonomy checks categories and tags: shared by all translations,
+// filterable alone or together, counted, and reassignable.
+func testTaxonomy(t *testing.T, r Repository) {
+	t.Helper()
+	ctx := context.Background()
+	if err := r.SetMeta(ctx, "hello-world", "meta", []string{"welcome", "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetMeta(ctx, "why-ssr", "web", []string{"go", "seo"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, lang := range []string{"en", "id"} {
+		if p, _ := r.Get(ctx, "hello-world", lang); p.Category != "meta" || !slices.Equal(p.Tags, []string{"welcome", "go"}) {
+			t.Errorf("hello-world/%s meta = %q %v; SetMeta must update every translation", lang, p.Category, p.Tags)
+		}
+	}
+
+	slugs := func(f Filter) []string {
+		ps, err := r.Find(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []string{}
+		for _, p := range ps {
+			out = append(out, p.Slug)
+		}
+		return out
+	}
+	for name, c := range map[string]struct {
+		f    Filter
+		want []string
+	}{
+		"tag":                {Filter{Lang: "en", Tag: "go"}, []string{"why-ssr", "hello-world"}},
+		"category":           {Filter{Lang: "en", Category: "web"}, []string{"why-ssr"}},
+		"tag and category":   {Filter{Lang: "en", Tag: "go", Category: "meta"}, []string{"hello-world"}},
+		"no match":           {Filter{Lang: "en", Tag: "seo", Category: "meta"}, []string{}},
+		"text and tag":       {Filter{Lang: "en", Text: "crawlers", Tag: "go"}, []string{"why-ssr"}},
+		"other language":     {Filter{Lang: "id", Tag: "go"}, []string{"hello-world"}},
+		"everything in lang": {Filter{Lang: "en"}, []string{"why-ssr", "hello-world"}},
+	} {
+		if got := slugs(c.f); !slices.Equal(got, c.want) {
+			t.Errorf("%s: Find = %v, want %v", name, got, c.want)
+		}
+	}
+
+	tags, _ := r.TagCounts(ctx, "en")
+	if len(tags) != 3 || tags[0] != (TagCount{Tag: "go", Count: 2}) {
+		t.Errorf("TagCounts(en) = %v", tags)
+	}
+	cats, _ := r.CategoryCounts(ctx, "en")
+	if cats["meta"] != 1 || cats["web"] != 1 {
+		t.Errorf("CategoryCounts(en) = %v", cats)
+	}
+
+	n, err := r.ReassignCategory(ctx, "meta", "")
+	if err != nil || n != 2 {
+		t.Errorf("ReassignCategory = %d, %v; want 2 translations", n, err)
+	}
+	if p, _ := r.Get(ctx, "hello-world", "id"); p.Category != "" {
+		t.Errorf("after reassign, category = %q", p.Category)
+	}
+}
+
+func TestMemoryStoreTaxonomy(t *testing.T) {
+	testTaxonomy(t, NewMemoryStore(SeedPosts()))
+}
+
+func TestParseTags(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+		err  string
+	}{
+		{" Go, go ,Node JS, #Security,, c++, C#, .NET ", []string{"go", "node-js", "security", "c++", "c#", ".net"}, ""},
+		{"keamanan, jaringan komputer", []string{"keamanan", "jaringan-komputer"}, ""},
+		{"", []string{}, ""},
+		{"bad/tag", nil, "Tags can use"},
+		{strings.Repeat("x", 31), nil, "under 30 characters"},
+		{"a,b,c,d,e,f,g,h,i,j,k", nil, "at most 10"},
+	}
+	for _, c := range cases {
+		got, err := ParseTags(c.in)
+		if c.err != "" {
+			if !strings.Contains(err, c.err) {
+				t.Errorf("ParseTags(%q) error = %q, want it to mention %q", c.in, err, c.err)
+			}
+			continue
+		}
+		if err != "" || !slices.Equal(got, c.want) {
+			t.Errorf("ParseTags(%q) = %v, %q; want %v", c.in, got, err, c.want)
+		}
 	}
 }
 

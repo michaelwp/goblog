@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"regexp"
@@ -32,6 +33,10 @@ type adminListPage struct {
 	Notice    string       `json:"notice"` // "deleted" or "deleted-all"
 	Filter    string       `json:"filter"` // "", or a status to show only articles with it
 	Bulk      *bulkResult  `json:"bulk"`   // result of the last list action, if any
+	// Categories for grouping the list; CategoryFilter is "", a category
+	// slug, or "none" for articles without a category.
+	Categories     []categoryOption `json:"categories"`
+	CategoryFilter string           `json:"categoryFilter"`
 }
 
 type adminEditPage struct {
@@ -43,6 +48,8 @@ type adminEditPage struct {
 	Errors            map[string]string `json:"errors"`
 	Languages         []string          `json:"languages"`
 	OtherTranslations []string          `json:"otherTranslations"`
+	Categories        []categoryOption  `json:"categories"` // for the category picker
+	KnownTags         []string          `json:"knownTags"`  // every tag in use, for suggestions
 	// Status of each existing translation of this article, by language, for
 	// the editor's language switcher.
 	Translations map[string]string `json:"translations"`
@@ -56,6 +63,9 @@ type adminForm struct {
 	Summary string `json:"summary"`
 	Body    string `json:"body"`
 	Date    string `json:"date"` // YYYY-MM-DD
+	// Article-wide: saved to every translation.
+	Category string `json:"category"`
+	Tags     string `json:"tags"` // comma-separated
 }
 
 const dateLayout = "2006-01-02"
@@ -106,6 +116,10 @@ func (h *pages) registerAdmin(app *fiber.App) {
 	admin.Get("/profile", h.adminProfileForm)
 	admin.Post("/profile", h.adminProfileSave)
 	admin.Post("/media", h.adminUpload)
+	admin.Get("/categories", h.adminCategories)
+	admin.Post("/categories", h.adminCreateCategory)
+	admin.Post("/categories/:slug", h.adminRenameCategory)
+	admin.Post("/categories/:slug/delete", h.adminDeleteCategory)
 	admin.Get("/password", h.adminPasswordForm)
 	admin.Post("/password", h.adminPasswordSave)
 	admin.Use(h.notFound)
@@ -333,9 +347,17 @@ func (h *pages) adminList(c *fiber.Ctx) error {
 	if !filter.Valid() {
 		filter = ""
 	}
+	options, err := h.categoryOptions(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	catFilter := c.Query("category")
+	if catFilter != "none" && !slices.ContainsFunc(options, func(o categoryOption) bool { return o.Slug == catFilter }) {
+		catFilter = ""
+	}
 	return h.render(c, fiber.StatusOK, h.cfg.Languages[0], nil, adminListPage{
 		base: h.adminBase(c, "adminList"), Posts: all, Languages: h.cfg.Languages, Notice: notice, Filter: string(filter),
-		Bulk: bulkFromQuery(c),
+		Bulk: bulkFromQuery(c), Categories: options, CategoryFilter: strings.Clone(catFilter),
 	})
 }
 
@@ -389,6 +411,7 @@ func (h *pages) adminNewForm(c *fiber.Ctx) error {
 	if from := c.Query("from"); form.Slug != "" && from != "" {
 		if src, err := h.cfg.Store.Get(c.UserContext(), form.Slug, from); err == nil {
 			form.Date = src.PublishedAt.UTC().Format(dateLayout)
+			form.Category, form.Tags = src.Category, strings.Join(src.Tags, ", ") // shared by all translations
 		}
 	}
 	return h.renderEdit(c, fiber.StatusOK, editState{mode: "new", form: form})
@@ -398,7 +421,7 @@ func (h *pages) adminCreate(c *fiber.Ctx) error {
 	form := readForm(c)
 	action := c.FormValue("action")
 	status := nextStatus(action, "")
-	p, errs := h.validate(form, "new", status)
+	p, errs := h.validate(c.UserContext(), form, "new", status)
 	if len(errs) == 0 {
 		err := h.cfg.Store.Create(c.UserContext(), p)
 		if errors.Is(err, posts.ErrExists) {
@@ -409,6 +432,10 @@ func (h *pages) adminCreate(c *fiber.Ctx) error {
 	}
 	if len(errs) > 0 {
 		return h.renderEdit(c, fiber.StatusUnprocessableEntity, editState{mode: "new", form: form, errs: errs})
+	}
+	// Category and tags are shared by every translation of the article.
+	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
+		return h.fail(c, err)
 	}
 	return c.Redirect(editURL(p, editNotice(action, status)), fiber.StatusSeeOther)
 }
@@ -432,7 +459,8 @@ func (h *pages) adminEditForm(c *fiber.Ctx) error {
 		mode: "edit", status: p.Status, notice: notice,
 		form: adminForm{
 			Slug: e.Slug, Lang: e.Lang, Title: e.Title, Summary: e.Summary, Body: e.Body,
-			Date: e.PublishedAt.UTC().Format(dateLayout),
+			Date:     e.PublishedAt.UTC().Format(dateLayout),
+			Category: e.Category, Tags: strings.Join(e.Tags, ", "),
 		},
 	}
 	if p.Draft != nil {
@@ -448,7 +476,7 @@ func (h *pages) adminEditForm(c *fiber.Ctx) error {
 // Edits to a Published article that aren't "publish" never touch the live
 // text: they're stored as its pending Draft, which readers don't see.
 // Publishing applies the draft; other status changes fold it in first.
-func (h *pages) saveEdit(existing posts.Post, form adminForm, action string) (posts.Post, map[string]string) {
+func (h *pages) saveEdit(ctx context.Context, existing posts.Post, form adminForm, action string) (posts.Post, map[string]string) {
 	status := nextStatus(action, existing.Status)
 	revise := existing.Status == posts.Published && status == posts.Published && action != "publish"
 
@@ -456,7 +484,7 @@ func (h *pages) saveEdit(existing posts.Post, form adminForm, action string) (po
 	if revise {
 		check = posts.Draft // a draft copy may be unfinished
 	}
-	p, errs := h.validate(form, "edit", check)
+	p, errs := h.validate(ctx, form, "edit", check)
 	if len(errs) > 0 {
 		return posts.Post{}, errs
 	}
@@ -468,6 +496,8 @@ func (h *pages) saveEdit(existing posts.Post, form adminForm, action string) (po
 		p.Status = status
 		return p, nil // p.Draft is nil: any pending draft is replaced by the form
 	}
+	// Category and tags describe the whole article; they apply right away.
+	existing.Category, existing.Tags = p.Category, p.Tags
 	existing.Draft = &posts.Revision{
 		Title: p.Title, Summary: p.Summary, Body: p.Body, PublishedAt: p.PublishedAt, SavedAt: time.Now().UTC(),
 	}
@@ -486,7 +516,7 @@ func (h *pages) adminUpdate(c *fiber.Ctx) error {
 	form := readForm(c)
 	form.Slug, form.Lang = existing.Slug, existing.Lang // identity comes from the URL, not the form
 	action := c.FormValue("action")
-	p, errs := h.saveEdit(existing, form, action)
+	p, errs := h.saveEdit(c.UserContext(), existing, form, action)
 	if len(errs) > 0 {
 		st := editState{mode: "edit", status: existing.Status, form: form, errs: errs}
 		if existing.Draft != nil {
@@ -495,6 +525,10 @@ func (h *pages) adminUpdate(c *fiber.Ctx) error {
 		return h.renderEdit(c, fiber.StatusUnprocessableEntity, st)
 	}
 	if err := h.cfg.Store.Update(c.UserContext(), p); err != nil {
+		return h.fail(c, err)
+	}
+	// Category and tags are shared by every translation of the article.
+	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
 		return h.fail(c, err)
 	}
 	notice := editNotice(action, p.Status)
@@ -541,7 +575,7 @@ func autosaveError(c *fiber.Ctx, status int, errs map[string]string) error {
 
 func (h *pages) adminAutosaveNew(c *fiber.Ctx) error {
 	form := readForm(c)
-	p, errs := h.validate(form, "new", posts.Draft)
+	p, errs := h.validate(c.UserContext(), form, "new", posts.Draft)
 	if len(errs) > 0 {
 		return autosaveError(c, fiber.StatusUnprocessableEntity, errs)
 	}
@@ -550,6 +584,10 @@ func (h *pages) adminAutosaveNew(c *fiber.Ctx) error {
 		return autosaveError(c, fiber.StatusConflict, map[string]string{"slug": "an article with this slug already exists in this language."})
 	}
 	if err != nil {
+		return h.fail(c, err)
+	}
+	// Category and tags are shared by every translation of the article.
+	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
 		return h.fail(c, err)
 	}
 	return c.JSON(fiber.Map{
@@ -568,11 +606,15 @@ func (h *pages) adminAutosave(c *fiber.Ctx) error {
 	}
 	form := readForm(c)
 	form.Slug, form.Lang = existing.Slug, existing.Lang
-	p, errs := h.saveEdit(existing, form, "save")
+	p, errs := h.saveEdit(c.UserContext(), existing, form, "save")
 	if len(errs) > 0 {
 		return autosaveError(c, fiber.StatusUnprocessableEntity, errs)
 	}
 	if err := h.cfg.Store.Update(c.UserContext(), p); err != nil {
+		return h.fail(c, err)
+	}
+	// Category and tags are shared by every translation of the article.
+	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
 		return h.fail(c, err)
 	}
 	return c.JSON(fiber.Map{"savedAt": time.Now().UTC().Format(time.RFC3339)})
@@ -623,11 +665,15 @@ func (h *pages) renderEdit(c *fiber.Ctx, code int, st editState) error {
 	// the language switcher. A new translation (?slug=) has siblings too.
 	var others []string
 	translations := map[string]string{}
+	all, err := h.cfg.Store.All(c.UserContext())
+	if err != nil {
+		return h.fail(c, err)
+	}
+	options, err := h.categoryOptions(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
 	if st.form.Slug != "" {
-		all, err := h.cfg.Store.All(c.UserContext())
-		if err != nil {
-			return h.fail(c, err)
-		}
 		for _, p := range all {
 			if p.Slug != st.form.Slug {
 				continue
@@ -648,6 +694,7 @@ func (h *pages) renderEdit(c *fiber.Ctx, code int, st editState) error {
 	return h.render(c, code, h.cfg.Languages[0], nil, adminEditPage{
 		base: h.adminBase(c, "adminEdit"), Mode: st.mode, Status: string(st.status), Notice: st.notice,
 		DraftSavedAt: st.draftSavedAt, Translations: translations,
+		Categories: options, KnownTags: knownTags(all),
 		Form: st.form, Errors: st.errs, Languages: h.cfg.Languages, OtherTranslations: others,
 	})
 }
@@ -666,14 +713,16 @@ func readForm(c *fiber.Ctx) adminForm {
 		Title:   v("title"),
 		Summary: v("summary"),
 		// Normalize Windows line endings from textareas so "\n\n" splits paragraphs.
-		Body: strings.ReplaceAll(v("body"), "\r\n", "\n"),
-		Date: v("date"),
+		Body:     strings.ReplaceAll(v("body"), "\r\n", "\n"),
+		Date:     v("date"),
+		Category: v("category"),
+		Tags:     v("tags"),
 	}
 }
 
 // validate checks the form for saving with status. Drafts may be unfinished,
 // so only a published article needs a body.
-func (h *pages) validate(f adminForm, mode string, status posts.Status) (posts.Post, map[string]string) {
+func (h *pages) validate(ctx context.Context, f adminForm, mode string, status posts.Status) (posts.Post, map[string]string) {
 	errs := map[string]string{}
 	if mode == "new" {
 		switch {
@@ -702,7 +751,57 @@ func (h *pages) validate(f adminForm, mode string, status posts.Status) (posts.P
 	if err != nil {
 		errs["date"] = "Enter a valid date."
 	}
+	if f.Category != "" {
+		if _, err := h.cfg.Categories.Get(ctx, f.Category); err != nil {
+			errs["category"] = "Choose a category from the list."
+		}
+	}
+	tags, msg := posts.ParseTags(f.Tags)
+	if msg != "" {
+		errs["tags"] = msg
+	}
 	return posts.Post{
 		Slug: f.Slug, Lang: f.Lang, Title: f.Title, Summary: f.Summary, Body: f.Body, PublishedAt: date, Status: status,
+		Category: f.Category, Tags: tags,
 	}, errs
+}
+
+// categoryOption is a category in the admin, named in the default language.
+type categoryOption struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+func (h *pages) categoryOptions(c *fiber.Ctx) ([]categoryOption, error) {
+	lang := h.cfg.Languages[0]
+	cats, err := h.cfg.Categories.List(c.UserContext(), lang)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]categoryOption, len(cats))
+	for i, cat := range cats {
+		out[i] = categoryOption{Slug: cat.Slug, Name: cat.Name(lang)}
+	}
+	return out, nil
+}
+
+// knownTags lists every tag used by any post, most used first.
+func knownTags(all []posts.Post) []string {
+	counts := map[string]int{}
+	for _, p := range all {
+		for _, t := range p.Tags {
+			counts[t]++
+		}
+	}
+	out := make([]string, 0, len(counts))
+	for t := range counts {
+		out = append(out, t)
+	}
+	slices.SortFunc(out, func(a, b string) int {
+		if counts[a] != counts[b] {
+			return counts[b] - counts[a]
+		}
+		return strings.Compare(a, b)
+	})
+	return out
 }

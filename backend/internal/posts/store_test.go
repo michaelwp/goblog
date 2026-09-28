@@ -17,7 +17,7 @@ func TestMemoryStoreSearch(t *testing.T) {
 		{"en", "a.b(", 0}, // regex metacharacters are literal
 	}
 	for _, c := range cases {
-		got, err := s.Search(context.Background(), c.lang, c.query)
+		got, err := s.Find(context.Background(), Filter{Lang: c.lang, Text: c.query})
 		if err != nil || len(got) != c.want {
 			t.Errorf("Search(%s, %q) = %d posts, %v; want %d", c.lang, c.query, len(got), err, c.want)
 		}

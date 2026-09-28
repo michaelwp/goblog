@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/posts"
 )
 
@@ -96,5 +97,53 @@ func TestUnpublishedPostsAreHidden(t *testing.T) {
 				t.Errorf("%s: post appears in list", status)
 			}
 		}
+	}
+}
+
+func TestTaxonomyEndpoints(t *testing.T) {
+	store := posts.NewMemoryStore(posts.SeedPosts())
+	cats := &categories.MemoryStore{}
+	_ = cats.Create(t.Context(), categories.Category{Slug: "web", Names: map[string]string{"en": "Web", "id": "Web"}})
+	_ = store.SetMeta(t.Context(), "why-ssr", "web", []string{"seo", "go"})
+	_ = store.SetMeta(t.Context(), "hello-world", "", []string{"go"})
+	app := New(Config{Store: store, Categories: cats, Languages: []string{"en", "id"}})
+	get := func(path string, out any) {
+		t.Helper()
+		resp, err := app.Test(httptest.NewRequest("GET", path, nil))
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("%s: %v %v", path, resp.StatusCode, err)
+		}
+		_ = json.NewDecoder(resp.Body).Decode(out)
+	}
+
+	var list struct{ Posts []posts.Post }
+	for path, want := range map[string]int{
+		"/api/v1/en/posts?tag=go":              2,
+		"/api/v1/en/posts?tag=Go":              2, // normalized
+		"/api/v1/en/posts?category=web":        1,
+		"/api/v1/en/posts?tag=go&category=web": 1,
+		"/api/v1/en/posts?tag=seo&category=x":  0,
+	} {
+		list.Posts = nil
+		get(path, &list)
+		if len(list.Posts) != want {
+			t.Errorf("%s: %d posts, want %d", path, len(list.Posts), want)
+		}
+	}
+
+	var cs struct {
+		Categories []struct {
+			Slug, Name string
+			Posts      int
+		}
+	}
+	get("/api/v1/en/categories", &cs)
+	if len(cs.Categories) != 1 || cs.Categories[0].Slug != "web" || cs.Categories[0].Posts != 1 {
+		t.Errorf("categories: %+v", cs.Categories)
+	}
+	var ts struct{ Tags []posts.TagCount }
+	get("/api/v1/en/tags", &ts)
+	if len(ts.Tags) != 2 || ts.Tags[0] != (posts.TagCount{Tag: "go", Count: 2}) {
+		t.Errorf("tags: %+v", ts.Tags)
 	}
 }

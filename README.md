@@ -15,7 +15,8 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 **For readers**
 
 - English and Indonesian editions. `/` redirects by browser language, and every page links to its translation.
-- A Wikipedia-inspired layout with a modern look: Contents sidebar, infobox, featured and recent articles, search, and an About page.
+- A Wikipedia-inspired layout with a modern look: Contents sidebar, infobox, featured article, articles grouped by category, and an About page.
+- Categories and tags: every category and tag has its own page, and search can combine words, a category and a tag.
 - Light, dark or automatic appearance, remembered without a flash on load.
 - Fast, crawlable pages: complete HTML from the server, `hreflang` alternates, and a small script (`app.js`) for interactivity.
 
@@ -26,6 +27,7 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - Safe edits to live articles: changes stay in a draft copy until you click **Publish changes**.
 - Autosave every minute, with a warning before leaving unsaved work.
 - A language switcher in the editor to move between translations or start a missing one.
+- Categories (managed in the admin, named in both languages) and free-form tags.
 - Profile for the About page, with photo upload and a country flag.
 - Password-protected, with a one-time setup code, strong-password rules and rate-limited logins.
 
@@ -89,11 +91,11 @@ No secrets go in `.env`: the admin password is stored, hashed, in MongoDB.
 
 ## Using the admin
 
-Sign in at `/admin`. The top bar has **Articles**, **Profile**, **Password**, **View site** and **Log out**.
+Sign in at `/admin`. The top bar has **Articles**, **Categories**, **Profile**, **Password**, **View site** and **Log out**.
 
 ### Articles
 
-The list groups each article with its translations. Each language chip shows its state, and **+ EN** / **+ ID** starts a missing translation. Filter by **All / Published / Drafts / Disabled**.
+The list groups each article with its translations and groups articles by category, with "No category" last. Each language chip shows its state, and **+ EN** / **+ ID** starts a missing translation. Filter by status (**All / Published / Drafts / Disabled**) and by category.
 
 Each translation has a status:
 
@@ -112,6 +114,15 @@ The buttons appear both above and below the form. Pressing Enter always takes th
 - **Several articles at once:** tick articles (or **Select all**) and use the bar that appears to **Publish**, **Disable**, **Move to drafts** or **Delete**. Each row's **⋯** menu does the same for one article. These actions cover every translation of an article. Publishing skips empty drafts and says how many, and Disable and Delete ask for confirmation.
 - **Deleting:** remove one translation, or the whole article in every language, from the editor's danger zone or the list.
 - **The slug can't be changed** after an article is created: it's the article's address and what links its translations together.
+
+### Categories and tags
+
+Both describe the whole article: they're shared by all its translations, so setting them on one language sets them on the others. They apply as soon as you save, even on a published article; only the text goes through the draft copy.
+
+- **Categories** are managed under **Admin → Categories**. Each has a name in every language (e.g. Security / Keamanan) and a slug used in its address (`/en/categories/security`); leave the slug empty to generate it from the English name. Categories are unique: a second category can't reuse a slug, or a name in either language (ignoring case). Names can be changed later but slugs can't. Deleting a category keeps its articles, which become uncategorized. In the editor, pick at most one category per article.
+- **Tags** are keywords typed in the editor's **Tags** field. Press Enter or comma after each; suggestions come from tags already in use. Tags are normalized (lowercase, spaces become hyphens) and can use letters, numbers and `- + # .` (so `c++`, `c#` and `node.js` work). Up to 10 per article.
+
+On the site, the main page groups articles by category, each category and tag has its own page, and **Search** can combine words, a category and a tag. Only published articles count.
 
 ### Writing
 
@@ -158,13 +169,17 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 | `/` | Redirect to the preferred language |
 | `/{lang}` | Main page: welcome, featured and recent articles |
 | `/{lang}/posts/{slug}` | Article, with contents, infobox and `hreflang` alternates |
-| `/{lang}/search?q=` | Search titles, summaries and bodies of published articles |
+| `/{lang}/search?q=&category=&tag=` | Search published articles by words, category and tag, in any combination |
+| `/{lang}/categories/{slug}` | Articles in a category |
+| `/{lang}/tags/{tag}` | Articles with a tag |
 | `/{lang}/about` | About the blog owner |
 | `/media/{id}.{ext}` | Uploaded images |
-| `/admin` | Admin area |
+| `/admin` | Admin area (articles, categories, profile, password) |
 | `/assets/*` | Embedded JS and CSS, cached for a year and versioned by content hash |
 | `/api/v1/languages` | Supported languages (JSON) |
-| `/api/v1/{lang}/posts` | Published posts in a language (JSON) |
+| `/api/v1/{lang}/posts?tag=&category=` | Published posts in a language, optionally filtered (JSON) |
+| `/api/v1/{lang}/categories` | Categories with their names and post counts (JSON) |
+| `/api/v1/{lang}/tags` | Tags in use, most used first (JSON) |
 | `/api/v1/{lang}/posts/{slug}` | One published post plus its available languages (JSON) |
 | `/healthz` | Liveness check |
 
@@ -186,6 +201,7 @@ backend/
   internal/web/        pages, admin, autosave, bulk actions, media and about handlers
   internal/ssr/        goja renderer pool
   internal/posts/      articles: MongoDB and in-memory stores, statuses, draft copies
+  internal/categories/ categories store (unique slugs and names)
   internal/profile/    About-page profile store
   internal/auth/       admin credential (bcrypt), password rules
   internal/media/      image uploads (GridFS)
@@ -200,7 +216,7 @@ frontend/
   test/                frontend tests (node:test)
 ```
 
-MongoDB collections: `posts` (one document per translation, unique on slug and language), `profile`, `admin`, and the `media` GridFS bucket (`media.files`, `media.chunks`).
+MongoDB collections: `posts` (one document per translation, unique on slug and language; category and tags are kept in sync across an article's translations), `categories` (unique slug, and unique names per language ignoring case), `profile`, `admin`, and the `media` GridFS bucket (`media.files`, `media.chunks`).
 
 ### SSR constraints
 

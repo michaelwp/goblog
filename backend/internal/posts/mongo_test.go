@@ -62,7 +62,7 @@ func TestMongoStore(t *testing.T) {
 	}
 
 	for query, want := range map[string]int{"SERVER": 2, "a.b(": 0, "dunia": 0} {
-		got, err := s.Search(ctx, "en", query)
+		got, err := s.Find(ctx, Filter{Lang: "en", Text: query})
 		if err != nil || len(got) != want {
 			t.Errorf("Search(en, %q) = %d posts, %v; want %d", query, len(got), err, want)
 		}
@@ -87,4 +87,25 @@ func TestMongoStore(t *testing.T) {
 	if p, _ := s.Get(ctx, "legacy", "en"); p.Status != Published {
 		t.Errorf("legacy post status after Migrate = %q", p.Status)
 	}
+}
+
+// Runs on its own freshly seeded database: the tests above change the seed.
+func TestMongoStoreTaxonomy(t *testing.T) {
+	uri := os.Getenv("MONGODB_TEST_URI")
+	if uri == "" {
+		t.Skip("MONGODB_TEST_URI not set")
+	}
+	ctx := context.Background()
+	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
+	db := client.Database(fmt.Sprintf("blog_test_%d", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = db.Drop(context.Background()) })
+	s := NewMongoStore(db)
+	if err := s.SeedIfEmpty(ctx, SeedPosts()); err != nil {
+		t.Fatal(err)
+	}
+	testTaxonomy(t, s)
 }

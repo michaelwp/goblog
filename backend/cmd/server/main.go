@@ -15,6 +15,7 @@ import (
 
 	"github.com/michaelputong/blog/backend/internal/api"
 	"github.com/michaelputong/blog/backend/internal/auth"
+	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/media"
 	"github.com/michaelputong/blog/backend/internal/posts"
 	"github.com/michaelputong/blog/backend/internal/profile"
@@ -74,10 +75,17 @@ func main() {
 	}
 
 	languages := strings.Split(env("LANGUAGES", "en,id"), ",")
-	app := api.New(api.Config{Store: store, Languages: languages, Logging: true})
+	cats := categories.NewMongoStore(db)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	if err := cats.EnsureIndexes(ctx, languages); err != nil {
+		log.Fatalf("category indexes: %v", err)
+	}
+	cancel()
+	app := api.New(api.Config{Store: store, Categories: cats, Languages: languages, Logging: true})
 	web.Register(app, web.Config{
 		Store:       store,
 		Profiles:    profile.NewMongoStore(db),
+		Categories:  cats,
 		Media:       media.NewMongoStore(db),
 		Credentials: credentials,
 		Renderer:    renderer,

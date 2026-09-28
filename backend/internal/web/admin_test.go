@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/michaelputong/blog/backend/internal/auth"
+	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/media"
 	"github.com/michaelputong/blog/backend/internal/posts"
 	"github.com/michaelputong/blog/backend/internal/profile"
@@ -52,7 +53,7 @@ func newAdminAppWithLog(t *testing.T, password string) (*fiber.App, *posts.Memor
 	var logs []string
 	app := fiber.New()
 	Register(app, Config{
-		Store: store, Profiles: &profile.MemoryStore{}, Media: &media.MemoryStore{}, Credentials: creds, BcryptCost: bcrypt.MinCost,
+		Store: store, Profiles: &profile.MemoryStore{}, Categories: &categories.MemoryStore{}, Media: &media.MemoryStore{}, Credentials: creds, BcryptCost: bcrypt.MinCost,
 		Renderer: r, Languages: []string{"en", "id"},
 		Logf: func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
 	})

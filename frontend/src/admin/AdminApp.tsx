@@ -1,6 +1,6 @@
 import { getDictionary } from "../lib/i18n";
 import type { AdminPageData } from "../types";
-import { AdminEdit, AdminList, AdminLogin, AdminPassword, AdminProfile, AdminSetup } from "./Admin";
+import { AdminCategories, AdminEdit, AdminList, AdminLogin, AdminPassword, AdminProfile, AdminSetup } from "./Admin";
 
 export function AdminApp(props: AdminPageData) {
   switch (props.page) {
@@ -16,6 +16,8 @@ export function AdminApp(props: AdminPageData) {
       return <AdminEdit {...props} />;
     case "adminProfile":
       return <AdminProfile {...props} />;
+    case "adminCategories":
+      return <AdminCategories {...props} />;
   }
 }
 
@@ -34,5 +36,7 @@ export function adminHead(props: AdminPageData): { title: string; description: s
       return { title: `${props.mode === "new" ? "New article" : `Edit: ${props.form.title}`} – ${site}`, description: "" };
     case "adminProfile":
       return { title: `Profile – ${site}`, description: "" };
+    case "adminCategories":
+      return { title: `Categories – ${site}`, description: "" };
   }
 }

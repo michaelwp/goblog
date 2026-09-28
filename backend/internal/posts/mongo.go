@@ -30,18 +30,26 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().SetUnique(true),
 		},
 		{Keys: bson.D{{Key: "lang", Value: 1}, {Key: "status", Value: 1}, {Key: "publishedAt", Value: -1}}},
+		{Keys: bson.D{{Key: "lang", Value: 1}, {Key: "status", Value: 1}, {Key: "category", Value: 1}}},
+		{Keys: bson.D{{Key: "lang", Value: 1}, {Key: "status", Value: 1}, {Key: "tags", Value: 1}}},
 	})
 	return err
 }
 
 // Migrate brings documents written by older versions up to date: posts
-// saved before statuses existed are published. It is idempotent.
+// saved before statuses existed are published, and posts from before
+// categories and tags get empty ones. It is idempotent.
 func (s *MongoStore) Migrate(ctx context.Context) error {
-	_, err := s.coll.UpdateMany(ctx,
-		bson.D{{Key: "status", Value: bson.D{{Key: "$exists", Value: false}}}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: Published}}}},
-	)
-	return err
+	for field, value := range map[string]any{"status": Published, "category": "", "tags": bson.A{}} {
+		_, err := s.coll.UpdateMany(ctx,
+			bson.D{{Key: field, Value: bson.D{{Key: "$exists", Value: false}}}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: field, Value: value}}}},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SeedIfEmpty inserts seed when the collection has no documents, so a fresh
@@ -96,31 +104,102 @@ func (s *MongoStore) Languages(ctx context.Context, slug string) ([]string, erro
 	return langs, nil
 }
 
-func (s *MongoStore) Search(ctx context.Context, lang, query string) ([]Post, error) {
-	// A case-insensitive substring match, which is plenty for a small blog.
-	// Swap in a text or Atlas Search index if the collection grows large.
-	re := bson.Regex{Pattern: regexp.QuoteMeta(query), Options: "i"}
-	filter := bson.D{
-		{Key: "lang", Value: lang},
-		{Key: "status", Value: Published},
-		{Key: "$or", Value: bson.A{
+func (s *MongoStore) Find(ctx context.Context, f Filter) ([]Post, error) {
+	filter := bson.D{{Key: "lang", Value: f.Lang}, {Key: "status", Value: Published}}
+	if f.Category != "" {
+		filter = append(filter, bson.E{Key: "category", Value: f.Category})
+	}
+	if f.Tag != "" {
+		filter = append(filter, bson.E{Key: "tags", Value: f.Tag})
+	}
+	if f.Text != "" {
+		// A case-insensitive substring match, which is plenty for a small blog.
+		// Swap in a text or Atlas Search index if the collection grows large.
+		re := bson.Regex{Pattern: regexp.QuoteMeta(f.Text), Options: "i"}
+		filter = append(filter, bson.E{Key: "$or", Value: bson.A{
 			bson.D{{Key: "title", Value: re}},
 			bson.D{{Key: "summary", Value: re}},
 			bson.D{{Key: "body", Value: re}},
-		}},
+		}})
 	}
 	cur, err := s.coll.Find(ctx, filter, options.Find().
 		SetSort(bson.D{{Key: "publishedAt", Value: -1}}).
 		SetProjection(bson.D{{Key: "draft", Value: 0}}).
 		SetLimit(SearchLimit))
 	if err != nil {
-		return nil, fmt.Errorf("search posts: %w", err)
+		return nil, fmt.Errorf("find posts: %w", err)
 	}
 	out := []Post{}
 	if err := cur.All(ctx, &out); err != nil {
-		return nil, fmt.Errorf("decode search results: %w", err)
+		return nil, fmt.Errorf("decode posts: %w", err)
 	}
 	return out, nil
+}
+
+func (s *MongoStore) TagCounts(ctx context.Context, lang string) ([]TagCount, error) {
+	cur, err := s.coll.Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "lang", Value: lang}, {Key: "status", Value: Published}}}},
+		{{Key: "$unwind", Value: "$tags"}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$tags"}, {Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("count tags: %w", err)
+	}
+	var rows []TagCount
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("decode tag counts: %w", err)
+	}
+	counts := map[string]int{}
+	for _, r := range rows {
+		counts[r.Tag] = r.Count
+	}
+	return sortTagCounts(counts), nil
+}
+
+func (s *MongoStore) CategoryCounts(ctx context.Context, lang string) (map[string]int, error) {
+	cur, err := s.coll.Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "lang", Value: lang}, {Key: "status", Value: Published}}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$category", ""}}}},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("count categories: %w", err)
+	}
+	var rows []struct {
+		Category string `bson:"_id"`
+		Count    int    `bson:"count"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("decode category counts: %w", err)
+	}
+	counts := map[string]int{}
+	for _, r := range rows {
+		counts[r.Category] = r.Count
+	}
+	return counts, nil
+}
+
+func (s *MongoStore) SetMeta(ctx context.Context, slug, category string, tags []string) error {
+	if tags == nil {
+		tags = []string{}
+	}
+	_, err := s.coll.UpdateMany(ctx, bson.D{{Key: "slug", Value: slug}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "category", Value: category}, {Key: "tags", Value: tags}}}})
+	if err != nil {
+		return fmt.Errorf("set article metadata: %w", err)
+	}
+	return nil
+}
+
+func (s *MongoStore) ReassignCategory(ctx context.Context, from, to string) (int, error) {
+	res, err := s.coll.UpdateMany(ctx, bson.D{{Key: "category", Value: from}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "category", Value: to}}}})
+	if err != nil {
+		return 0, fmt.Errorf("reassign category: %w", err)
+	}
+	return int(res.ModifiedCount), nil
 }
 
 func (s *MongoStore) All(ctx context.Context) ([]Post, error) {

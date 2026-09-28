@@ -9,13 +9,15 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/posts"
 )
 
 type Config struct {
-	Store     posts.Repository
-	Languages []string // supported languages; the first is the default
-	Logging   bool
+	Store      posts.Repository
+	Categories categories.Store
+	Languages  []string // supported languages; the first is the default
+	Logging    bool
 }
 
 // New builds the Fiber app with the health check and JSON API registered.
@@ -30,13 +32,15 @@ func New(cfg Config) *fiber.App {
 		app.Use(logger.New())
 	}
 
-	h := &handlers{store: cfg.Store, languages: cfg.Languages}
+	h := &handlers{store: cfg.Store, categories: cfg.Categories, languages: cfg.Languages}
 
 	app.Get("/healthz", func(c *fiber.Ctx) error { return c.SendString("ok") })
 
 	v1 := app.Group("/api/v1")
 	v1.Get("/languages", h.listLanguages)
 	v1.Get("/:lang/posts", h.listPosts)
+	v1.Get("/:lang/categories", h.listCategories)
+	v1.Get("/:lang/tags", h.listTags)
 	v1.Get("/:lang/posts/:slug", h.getPost)
 	v1.Use(func(c *fiber.Ctx) error { return fiber.ErrNotFound })
 
@@ -44,8 +48,9 @@ func New(cfg Config) *fiber.App {
 }
 
 type handlers struct {
-	store     posts.Repository
-	languages []string
+	store      posts.Repository
+	categories categories.Store
+	languages  []string
 }
 
 func (h *handlers) listLanguages(c *fiber.Ctx) error {
@@ -57,11 +62,57 @@ func (h *handlers) listPosts(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	list, err := h.store.List(c.UserContext(), lang)
+	// Optional filters: ?tag= and/or ?category= (a category slug).
+	var list []posts.Post
+	if tag, cat := c.Query("tag"), c.Query("category"); tag != "" || cat != "" {
+		list, err = h.store.Find(c.UserContext(), posts.Filter{Lang: lang, Tag: posts.NormalizeTag(tag), Category: cat})
+	} else {
+		list, err = h.store.List(c.UserContext(), lang)
+	}
 	if err != nil {
 		return err
 	}
 	return c.JSON(fiber.Map{"posts": list})
+}
+
+// GET /api/v1/:lang/categories: every category, named in lang, with its
+// number of published posts in lang.
+func (h *handlers) listCategories(c *fiber.Ctx) error {
+	lang, err := h.lang(c)
+	if err != nil {
+		return err
+	}
+	cats, err := h.categories.List(c.UserContext(), lang)
+	if err != nil {
+		return err
+	}
+	counts, err := h.store.CategoryCounts(c.UserContext(), lang)
+	if err != nil {
+		return err
+	}
+	type item struct {
+		Slug  string `json:"slug"`
+		Name  string `json:"name"`
+		Posts int    `json:"posts"`
+	}
+	out := make([]item, len(cats))
+	for i, cat := range cats {
+		out[i] = item{Slug: cat.Slug, Name: cat.Name(lang), Posts: counts[cat.Slug]}
+	}
+	return c.JSON(fiber.Map{"categories": out})
+}
+
+// GET /api/v1/:lang/tags: tags used by published posts in lang, most used first.
+func (h *handlers) listTags(c *fiber.Ctx) error {
+	lang, err := h.lang(c)
+	if err != nil {
+		return err
+	}
+	tags, err := h.store.TagCounts(c.UserContext(), lang)
+	if err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"tags": tags})
 }
 
 func (h *handlers) getPost(c *fiber.Ctx) error {

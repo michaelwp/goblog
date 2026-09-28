@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/michaelputong/blog/backend/internal/auth"
+	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/media"
 	"github.com/michaelputong/blog/backend/internal/posts"
 	"github.com/michaelputong/blog/backend/internal/profile"
@@ -28,7 +29,7 @@ func newApp(t *testing.T, seed []posts.Post) *fiber.App {
 		t.Fatal(err)
 	}
 	app := fiber.New()
-	Register(app, Config{Store: posts.NewMemoryStore(seed), Profiles: &profile.MemoryStore{}, Media: &media.MemoryStore{}, Credentials: &auth.MemoryStore{}, Logf: func(string, ...any) {}, Renderer: r, Languages: []string{"en", "id"}})
+	Register(app, Config{Store: posts.NewMemoryStore(seed), Profiles: &profile.MemoryStore{}, Categories: &categories.MemoryStore{}, Media: &media.MemoryStore{}, Credentials: &auth.MemoryStore{}, Logf: func(string, ...any) {}, Renderer: r, Languages: []string{"en", "id"}})
 	return app
 }
 

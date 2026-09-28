@@ -9,6 +9,8 @@ export type Post = {
   body: string;
   publishedAt: string;
   status: PostStatus;
+  category: string; // category slug, "" for none (shared by all translations)
+  tags: string[] | null;
   // Unpublished edits to a published article (admin pages only).
   draft?: { title: string; summary: string; body: string; publishedAt: string; savedAt: string } | null;
 };
@@ -24,13 +26,27 @@ export type Theme = "auto" | "light" | "dark";
 
 // What the Go server passes to render() and embeds as window.__PAGE__ for
 // hydration. Keep in sync with the page handlers in backend/internal/web.
-type PageBase = { lang: Locale; theme: Theme; year: number };
+// Categories with published articles in the page's language (public pages).
+export type NavCategory = { slug: string; name: string; count: number };
+export type TagCount = { tag: string; count: number };
+export type CategoryOption = { slug: string; name: string };
+
+type PageBase = { lang: Locale; theme: Theme; year: number; categories?: NavCategory[] };
 
 // Pages of the public site, hydrated by app.js.
 export type PublicPageData = PageBase & (
-  | { page: "home"; posts: Post[] }
+  | { page: "home"; posts: Post[]; groups: { category: NavCategory; posts: Post[] }[] }
   | { page: "post"; post: Post; availableLanguages: Locale[]; preview: boolean; pendingChanges: boolean }
-  | { page: "search"; query: string; results: Post[] }
+  | {
+      page: "search";
+      scope: "search" | "category" | "tag";
+      query: string;
+      tag: string;
+      category: string;
+      results: Post[];
+      tags: TagCount[];
+      filtered: boolean;
+    }
   | { page: "notFound" }
   | { page: "about"; profile: AboutProfile }
 );
@@ -38,6 +54,16 @@ export type PublicPageData = PageBase & (
 // Admin pages, hydrated by admin.js (which includes the editor).
 export type AdminPageData = PageBase & (
   | { page: "adminLogin"; error: string }
+  | {
+      page: "adminCategories";
+      list: { slug: string; names: Record<string, string>; articles: number }[];
+      languages: Locale[];
+      form: CategoryForm;
+      errors: Record<string, string>;
+      rowErrors: Record<string, string>;
+      rowForms: Record<string, CategoryForm>;
+      notice: "" | "created" | "renamed" | "deleted";
+    }
   | { page: "adminSetup"; error: string }
   | { page: "adminPassword"; errors: Partial<Record<"current" | "password", string>>; notice: "" | "saved" }
   | {
@@ -47,6 +73,8 @@ export type AdminPageData = PageBase & (
       notice: "" | "deleted" | "deleted-all" | "none-selected";
       filter: "" | PostStatus;
       bulk: BulkResult | null;
+      categories: CategoryOption[];
+      categoryFilter: string; // "", a category slug, or "none"
     }
   | {
       page: "adminEdit";
@@ -55,6 +83,8 @@ export type AdminPageData = PageBase & (
       notice: "" | "draft" | "published" | "saved" | "disabled" | "revised" | "discarded";
       draftSavedAt: string; // set when a published article has unpublished changes
       translations: Partial<Record<Locale, PostStatus | "edited">>; // existing translations of this article
+      categories: CategoryOption[];
+      knownTags: string[];
       otherTranslations: Locale[];
       form: AdminForm;
       errors: Partial<Record<keyof AdminForm, string>>;
@@ -108,4 +138,8 @@ export type AdminForm = {
   summary: string;
   body: string;
   date: string; // YYYY-MM-DD
+  category: string;
+  tags: string; // comma-separated
 };
+
+export type CategoryForm = { slug: string; names: Record<string, string> | null };

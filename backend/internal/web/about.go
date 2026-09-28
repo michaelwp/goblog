@@ -60,7 +60,11 @@ func (h *pages) about(c *fiber.Ctx) error {
 	}
 	view.Empty = view.Name == "" && view.Headline == "" && view.Bio == "" && view.Location == "" && view.Country == ""
 
-	return h.render(c, fiber.StatusOK, lang, nil, aboutPage{base: newBase(c, "about", lang), Profile: view})
+	b, err := h.publicBase(c, "about", lang)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return h.render(c, fiber.StatusOK, lang, nil, aboutPage{base: b, Profile: view})
 }
 
 // ---- Admin -------------------------------------------------------------

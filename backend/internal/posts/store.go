@@ -3,6 +3,7 @@ package posts
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -24,6 +25,10 @@ type Post struct {
 	Body        string    `json:"body" bson:"body"`
 	PublishedAt time.Time `json:"publishedAt" bson:"publishedAt"`
 	Status      Status    `json:"status" bson:"status"`
+	// Category and Tags describe the whole article: they are kept the same
+	// on every translation (see SetMeta) and are not part of Draft.
+	Category string   `json:"category" bson:"category"` // category slug, or "" for none
+	Tags     []string `json:"tags" bson:"tags"`
 	// Draft holds unpublished edits to a Published post. Readers keep seeing
 	// the fields above until the draft is published (ApplyDraft). Only
 	// Published posts carry one; drafts and disabled posts are edited in place.
@@ -81,9 +86,15 @@ type Repository interface {
 	Get(ctx context.Context, slug, lang string) (Post, error)
 	// Languages returns the languages slug is published in, sorted.
 	Languages(ctx context.Context, slug string) ([]string, error)
-	// Search returns published posts in lang whose title, summary or body
-	// contains query (case-insensitive), newest first, at most SearchLimit.
-	Search(ctx context.Context, lang, query string) ([]Post, error)
+	// Find returns published posts matching every set field of f, newest
+	// first, at most SearchLimit.
+	Find(ctx context.Context, f Filter) ([]Post, error)
+	// TagCounts returns how many published posts in lang use each tag,
+	// most used first.
+	TagCounts(ctx context.Context, lang string) ([]TagCount, error)
+	// CategoryCounts returns how many published posts in lang each
+	// category has ("" counts posts without one).
+	CategoryCounts(ctx context.Context, lang string) (map[string]int, error)
 
 	// All returns every post in every language and status, newest first.
 	All(ctx context.Context) ([]Post, error)
@@ -96,9 +107,47 @@ type Repository interface {
 	Delete(ctx context.Context, slug, lang string) error
 	// DeleteAll removes every translation of slug and reports how many.
 	DeleteAll(ctx context.Context, slug string) (int, error)
+	// SetMeta sets the category and tags of every translation of slug.
+	SetMeta(ctx context.Context, slug, category string, tags []string) error
+	// ReassignCategory moves every post in category from to category to
+	// ("" for none) and reports how many translations changed.
+	ReassignCategory(ctx context.Context, from, to string) (int, error)
 }
 
-const SearchLimit = 50
+// Filter selects published posts. Lang is required; Text matches title,
+// summary or body (case-insensitive); Tag and Category must match exactly.
+type Filter struct {
+	Lang, Text, Tag, Category string
+}
+
+func (f Filter) matches(p Post) bool {
+	if p.Lang != f.Lang || p.Status != Published {
+		return false
+	}
+	if f.Category != "" && p.Category != f.Category {
+		return false
+	}
+	if f.Tag != "" && !slices.Contains(p.Tags, f.Tag) {
+		return false
+	}
+	if f.Text == "" {
+		return true
+	}
+	q := strings.ToLower(f.Text)
+	for _, field := range []string{p.Title, p.Summary, p.Body} {
+		if strings.Contains(strings.ToLower(field), q) {
+			return true
+		}
+	}
+	return false
+}
+
+type TagCount struct {
+	Tag   string `json:"tag" bson:"_id"`
+	Count int    `json:"count" bson:"count"`
+}
+
+const SearchLimit = 100
 
 // MemoryStore is a concurrency-safe in-memory Repository.
 type MemoryStore struct {
@@ -162,22 +211,78 @@ func (s *MemoryStore) Languages(_ context.Context, slug string) ([]string, error
 	return langs, nil
 }
 
-func (s *MemoryStore) Search(ctx context.Context, lang, query string) ([]Post, error) {
-	all, _ := s.List(ctx, lang)
-	q := strings.ToLower(query)
+func (s *MemoryStore) Find(ctx context.Context, f Filter) ([]Post, error) {
+	all, _ := s.List(ctx, f.Lang)
 	out := []Post{}
 	for _, p := range all {
 		if len(out) == SearchLimit {
 			break
 		}
-		for _, field := range []string{p.Title, p.Summary, p.Body} {
-			if strings.Contains(strings.ToLower(field), q) {
-				out = append(out, p)
-				break
-			}
+		if f.matches(p) {
+			out = append(out, p)
 		}
 	}
 	return out, nil
+}
+
+func (s *MemoryStore) TagCounts(ctx context.Context, lang string) ([]TagCount, error) {
+	all, _ := s.List(ctx, lang)
+	counts := map[string]int{}
+	for _, p := range all {
+		for _, t := range p.Tags {
+			counts[t]++
+		}
+	}
+	return sortTagCounts(counts), nil
+}
+
+func sortTagCounts(counts map[string]int) []TagCount {
+	out := []TagCount{}
+	for t, n := range counts {
+		out = append(out, TagCount{Tag: t, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Tag < out[j].Tag
+	})
+	return out
+}
+
+func (s *MemoryStore) CategoryCounts(ctx context.Context, lang string) (map[string]int, error) {
+	all, _ := s.List(ctx, lang)
+	counts := map[string]int{}
+	for _, p := range all {
+		counts[p.Category]++
+	}
+	return counts, nil
+}
+
+func (s *MemoryStore) SetMeta(_ context.Context, slug, category string, tags []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for lang, p := range s.posts[slug] {
+		p.Category, p.Tags = category, slices.Clone(tags)
+		s.posts[slug][lang] = p
+	}
+	return nil
+}
+
+func (s *MemoryStore) ReassignCategory(_ context.Context, from, to string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for slug, translations := range s.posts {
+		for lang, p := range translations {
+			if p.Category == from {
+				p.Category = to
+				s.posts[slug][lang] = p
+				n++
+			}
+		}
+	}
+	return n, nil
 }
 
 func (s *MemoryStore) All(_ context.Context) ([]Post, error) {

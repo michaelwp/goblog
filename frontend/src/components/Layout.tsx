@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 
 import { type Dictionary, getDictionary, type Locale } from "../lib/i18n";
-import type { Theme } from "../types";
+import type { NavCategory, Theme } from "../types";
+import { CategoryMenu } from "./Taxonomy";
 import { AppearanceMenu } from "./Appearance";
 
 type LayoutProps = {
@@ -64,22 +65,26 @@ export function SearchForm(props: { lang: Locale; t: Dictionary; query?: string;
   );
 }
 
-export function MainMenu({ lang, t }: { lang: Locale; t: Dictionary }) {
+export function MainMenu({ lang, t, categories }: { lang: Locale; t: Dictionary; categories?: NavCategory[] }) {
+  // One wrapper: the sidebar makes its direct child sticky.
   return (
-    <nav className="side-nav" aria-label={t.mainMenu}>
-      <h2 className="side-heading">{t.mainMenu}</h2>
-      <ul>
-        <li>
-          <a href={`/${lang}`}>{t.mainPage}</a>
-        </li>
-        <li>
-          <a href={`/${lang}/about`}>{t.about}</a>
-        </li>
-        <li>
-          <a href={`/${lang}/search`}>{t.search}</a>
-        </li>
-      </ul>
-    </nav>
+    <div className="side-menus">
+      <nav className="side-nav" aria-label={t.mainMenu}>
+        <h2 className="side-heading">{t.mainMenu}</h2>
+        <ul>
+          <li>
+            <a href={`/${lang}`}>{t.mainPage}</a>
+          </li>
+          <li>
+            <a href={`/${lang}/about`}>{t.about}</a>
+          </li>
+          <li>
+            <a href={`/${lang}/search`}>{t.search}</a>
+          </li>
+        </ul>
+      </nav>
+      <CategoryMenu lang={lang} t={t} categories={categories} />
+    </div>
   );
 }
 

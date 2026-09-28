@@ -19,6 +19,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 
 	"github.com/michaelputong/blog/backend/internal/auth"
+	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/media"
 	"github.com/michaelputong/blog/backend/internal/posts"
 	"github.com/michaelputong/blog/backend/internal/profile"
@@ -26,11 +27,12 @@ import (
 )
 
 type Config struct {
-	Store     posts.Repository
-	Profiles  profile.Store
-	Media     media.Store
-	Renderer  *ssr.Renderer
-	Languages []string // supported languages; the first is the default
+	Store      posts.Repository
+	Profiles   profile.Store
+	Categories categories.Store
+	Media      media.Store
+	Renderer   *ssr.Renderer
+	Languages  []string // supported languages; the first is the default
 
 	// Credentials holds the admin password hash and session key.
 	Credentials auth.Store
@@ -46,12 +48,15 @@ type base struct {
 	Page  string `json:"page"`
 	Lang  string `json:"lang"`
 	Theme string `json:"theme"` // "auto", "light" or "dark"
-	Year  int    `json:"year"`  // for the footer; from the server so SSR and hydration agree
+	// Categories with published articles, for public pages' menus.
+	Categories []navCategory `json:"categories,omitempty"`
+	Year       int           `json:"year"` // for the footer; from the server so SSR and hydration agree
 }
 
 type homePage struct {
 	base
-	Posts []posts.Post `json:"posts"`
+	Posts  []posts.Post `json:"posts"`
+	Groups []homeGroup  `json:"groups"` // the posts by category
 }
 
 type postPage struct {
@@ -60,12 +65,6 @@ type postPage struct {
 	AvailableLanguages []string   `json:"availableLanguages"`
 	Preview            bool       `json:"preview"`        // admin preview of an unpublished article
 	PendingChanges     bool       `json:"pendingChanges"` // the preview shows unpublished edits to a live article
-}
-
-type searchPage struct {
-	base
-	Query   string       `json:"query"`
-	Results []posts.Post `json:"results"`
 }
 
 type notFoundPage struct {
@@ -120,6 +119,8 @@ func Register(app *fiber.App, cfg Config) {
 	app.Get("/", h.root)
 	app.Get("/:lang", h.home)
 	app.Get("/:lang/search", h.search)
+	app.Get("/:lang/categories/:slug", h.categoryPage)
+	app.Get("/:lang/tags/:tag", h.tagPage)
 	app.Get("/:lang/about", h.about)
 	app.Get("/:lang/posts/:slug", h.post)
 	app.Use(h.notFound)
@@ -155,26 +156,11 @@ func (h *pages) home(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	return h.render(c, fiber.StatusOK, lang, nil, homePage{base: newBase(c, "home", lang), Posts: list})
-}
-
-func (h *pages) search(c *fiber.Ctx) error {
-	lang := c.Params("lang")
-	if !slices.Contains(h.cfg.Languages, lang) {
-		return h.notFound(c)
+	b, err := h.publicBase(c, "home", lang)
+	if err != nil {
+		return h.fail(c, err)
 	}
-	query := strings.TrimSpace(c.Query("q"))
-	if r := []rune(query); len(r) > 200 {
-		query = string(r[:200]) // cut on a character boundary, not mid-UTF-8
-	}
-	results := []posts.Post{}
-	if query != "" {
-		var err error
-		if results, err = h.cfg.Store.Search(c.UserContext(), lang, query); err != nil {
-			return h.fail(c, err)
-		}
-	}
-	return h.render(c, fiber.StatusOK, lang, nil, searchPage{base: newBase(c, "search", lang), Query: query, Results: results})
+	return h.render(c, fiber.StatusOK, lang, nil, homePage{base: b, Posts: list, Groups: groupByCategory(list, b.Categories)})
 }
 
 func (h *pages) post(c *fiber.Ctx) error {
@@ -205,6 +191,16 @@ func (h *pages) renderPost(c *fiber.Ctx, p posts.Post, preview bool) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	b, err := h.publicBase(c, "post", p.Lang)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if p.Category != "" && !slices.ContainsFunc(b.Categories, func(n navCategory) bool { return n.Slug == p.Category }) {
+		// A preview's category may have no published articles yet; still name it.
+		if cat, err := h.cfg.Categories.Get(c.UserContext(), p.Category); err == nil {
+			b.Categories = append(b.Categories, navCategory{Slug: cat.Slug, Name: cat.Name(p.Lang)})
+		}
+	}
 	var alternates []alternate
 	if !preview {
 		for _, l := range langs {
@@ -212,7 +208,7 @@ func (h *pages) renderPost(c *fiber.Ctx, p posts.Post, preview bool) error {
 		}
 	}
 	return h.render(c, fiber.StatusOK, p.Lang, alternates,
-		postPage{base: newBase(c, "post", p.Lang), Post: p, AvailableLanguages: langs, Preview: preview, PendingChanges: pending})
+		postPage{base: b, Post: p, AvailableLanguages: langs, Preview: preview, PendingChanges: pending})
 }
 
 func (h *pages) notFound(c *fiber.Ctx) error {
@@ -221,7 +217,11 @@ func (h *pages) notFound(c *fiber.Ctx) error {
 	if first, _, _ := strings.Cut(strings.TrimPrefix(c.Path(), "/"), "/"); slices.Contains(h.cfg.Languages, first) {
 		lang = first
 	}
-	return h.render(c, fiber.StatusNotFound, lang, nil, notFoundPage{base: newBase(c, "notFound", lang)})
+	b, err := h.publicBase(c, "notFound", lang)
+	if err != nil {
+		log.Printf("categories for 404 page: %v", err) // still show the 404
+	}
+	return h.render(c, fiber.StatusNotFound, lang, nil, notFoundPage{base: b})
 }
 
 func (h *pages) fail(c *fiber.Ctx, err error) error {
