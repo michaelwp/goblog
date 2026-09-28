@@ -5,6 +5,15 @@ import type { Theme } from "../types";
 
 const THEMES: Theme[] = ["auto", "light", "dark"];
 
+// Applies a theme to the page and remembers it in the cookie the server reads.
+function applyTheme(next: Theme) {
+  const root = document.documentElement;
+  if (next === "auto") delete root.dataset.theme;
+  else root.dataset.theme = next;
+  document.cookie =
+    next === "auto" ? "theme=; Path=/; Max-Age=0; SameSite=Lax" : `theme=${next}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
 // Wikipedia-style "Appearance" menu. The choice is stored in a cookie that the
 // Go server reads, so the next page is rendered in the right theme up front.
 export function AppearanceMenu({ t, initial }: { t: Dictionary; initial: Theme }) {
@@ -13,11 +22,7 @@ export function AppearanceMenu({ t, initial }: { t: Dictionary; initial: Theme }
 
   function choose(next: Theme) {
     setTheme(next);
-    const root = document.documentElement;
-    if (next === "auto") delete root.dataset.theme;
-    else root.dataset.theme = next;
-    document.cookie =
-      next === "auto" ? "theme=; Path=/; Max-Age=0; SameSite=Lax" : `theme=${next}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    applyTheme(next);
   }
 
   return (

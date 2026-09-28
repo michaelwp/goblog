@@ -1,4 +1,6 @@
-import { type KeyboardEvent, useEffect, useId, useState } from "react";
+import { type KeyboardEvent, useId, useState } from "react";
+
+import { useHydrated } from "../lib/useHydrated";
 
 const MAX_TAGS = 10;
 
@@ -23,13 +25,12 @@ const parse = (value: string) => [...new Set(value.split(",").map(normalizeTag).
 // with suggestions from tags already in use. Either way the form submits
 // "tags" as a comma-separated list.
 export function TagInput({ defaultValue, known, invalid }: { defaultValue: string; known: string[]; invalid?: boolean }) {
-  const [mounted, setMounted] = useState(false);
+  const hydrated = useHydrated();
   const [tags, setTags] = useState(() => parse(defaultValue));
   const [text, setText] = useState("");
   const listId = useId();
-  useEffect(() => setMounted(true), []);
 
-  if (!mounted) {
+  if (!hydrated) {
     return <input type="text" name="tags" defaultValue={defaultValue} placeholder="go, security, web" aria-invalid={invalid || undefined} />;
   }
 

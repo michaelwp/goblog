@@ -82,7 +82,7 @@ export function AboutPage({ lang, theme, year, profile, categories, t }: Props) 
                         <ul className="infobox-links">
                           {profile.links.map((l) => (
                             <li key={l.url}>
-                              <a href={l.url} rel="me noopener" target="_blank">
+                              <a href={l.url} rel="me noopener noreferrer" target="_blank">
                                 {l.label}
                               </a>
                             </li>

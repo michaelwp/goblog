@@ -77,9 +77,16 @@ func uploadReq(t *testing.T, filename string, data []byte, cookies ...*http.Cook
 	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
-	part, _ := w.CreateFormFile("file", filename)
-	part.Write(data)
-	w.Close()
+	part, err := w.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest("POST", "/admin/media", &body)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	for _, c := range cookies {
@@ -95,7 +102,9 @@ func TestImageUploadAndServe(t *testing.T) {
 
 	resp, _ := app.Test(uploadReq(t, "photo.png", data, session))
 	var out struct{ URL, Error string }
-	json.NewDecoder(resp.Body).Decode(&out)
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != 201 || !strings.HasPrefix(out.URL, "/media/") || !strings.HasSuffix(out.URL, ".png") {
 		t.Fatalf("upload: %d %+v", resp.StatusCode, out)
 	}

@@ -91,7 +91,9 @@ func TestUnpublishedPostsAreHidden(t *testing.T) {
 		}
 		resp, _ = app.Test(httptest.NewRequest("GET", "/api/v1/en/posts", nil))
 		var body struct{ Posts []posts.Post }
-		json.NewDecoder(resp.Body).Decode(&body)
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
 		for _, p := range body.Posts {
 			if p.Slug == "why-ssr" {
 				t.Errorf("%s: post appears in list", status)
@@ -145,5 +147,23 @@ func TestTaxonomyEndpoints(t *testing.T) {
 	get("/api/v1/en/tags", &ts)
 	if len(ts.Tags) != 2 || ts.Tags[0] != (posts.TagCount{Tag: "go", Count: 2}) {
 		t.Errorf("tags: %+v", ts.Tags)
+	}
+}
+
+func TestListLanguages(t *testing.T) {
+	app := New(Config{Store: posts.NewMemoryStore(nil), Languages: []string{"en", "id"}})
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/languages", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Languages []string
+		Default   string
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Languages) != 2 || body.Default != "en" {
+		t.Errorf("languages = %+v", body)
 	}
 }

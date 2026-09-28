@@ -31,9 +31,15 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - Profile for the About page, with photo upload and a country flag.
 - Password-protected, with a one-time setup code, strong-password rules and rate-limited logins.
 
+**For developers**
+
+- One command each to run, test, lint and deploy (`make`).
+- Unit tests for both halves (`go test`, `node:test`), plus MongoDB integration tests.
+- Standard lint rules for Go (golangci-lint) and React/TypeScript (ESLint), enforced by a git pre-commit hook.
+
 ## Quick start
 
-Requires macOS with [Apple `container`](https://github.com/apple/container) for the container workflow. Running the app directly on your Mac also needs Go 1.26+ and Node 20+.
+Requires macOS with [Apple `container`](https://github.com/apple/container) for the container workflow. Running the app directly on your Mac, testing and linting also need Go 1.26+ and Node 20+.
 
 **Everything in containers:**
 
@@ -73,7 +79,14 @@ Run `make` to list every target.
 | `make run` | Build the frontend and run the Go server on your Mac |
 | `make watch` | Rebuild frontend bundles on change (restart `make run` to pick them up) |
 | `make build` | Compile `bin/blog` with the frontend embedded |
-| `make test` | Type-check and test the frontend, then vet and test the backend |
+| `make test` / `make test-unit` | Unit tests: frontend (`node:test`) and backend (`go test`, in-memory stores) |
+| `make test-integration` | Integration tests against a real MongoDB (`make mongo` first, or set `MONGODB_TEST_URI`) |
+| `make test-all` | Unit and integration tests |
+| `make cover` | Backend test coverage |
+| `make lint` | golangci-lint for Go; ESLint and a type check for the frontend |
+| `make fmt` | Fix formatting and auto-fixable lint issues |
+| `make check` | Lint and unit tests: what the pre-commit hook runs |
+| `make hooks` | Install the git pre-commit hook |
 | `make image` / `make clean` | Build only the container image / remove build output |
 
 ## Configuration
@@ -86,6 +99,7 @@ Run `make` to list every target.
 | `MONGODB_DB` | Database name (default `blog`). |
 | `PORT` | HTTP port (default `8080`). |
 | `LANGUAGES` | Supported languages, default first (default `en,id`). Keep in sync with `frontend/src/lib/i18n.ts`. |
+| `MONGODB_TEST_URI` | MongoDB for `make test-integration` (default: `localhost:27018`, the `make mongo` container). Tests create and drop their own temporary databases. |
 
 No secrets go in `.env`: the admin password is stored, hashed, in MongoDB.
 
@@ -167,7 +181,7 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 | Route | Response |
 | --- | --- |
 | `/` | Redirect to the preferred language |
-| `/{lang}` | Main page: welcome, featured and recent articles |
+| `/{lang}` | Main page: welcome, featured article, and articles grouped by category |
 | `/{lang}/posts/{slug}` | Article, with contents, infobox and `hreflang` alternates |
 | `/{lang}/search?q=&category=&tag=` | Search published articles by words, category and tag, in any combination |
 | `/{lang}/categories/{slug}` | Articles in a category |
@@ -178,9 +192,9 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 | `/assets/*` | Embedded JS and CSS, cached for a year and versioned by content hash |
 | `/api/v1/languages` | Supported languages (JSON) |
 | `/api/v1/{lang}/posts?tag=&category=` | Published posts in a language, optionally filtered (JSON) |
+| `/api/v1/{lang}/posts/{slug}` | One published post plus its available languages (JSON) |
 | `/api/v1/{lang}/categories` | Categories with their names and post counts (JSON) |
 | `/api/v1/{lang}/tags` | Tags in use, most used first (JSON) |
-| `/api/v1/{lang}/posts/{slug}` | One published post plus its available languages (JSON) |
 | `/healthz` | Liveness check |
 
 ## How it works
@@ -195,7 +209,11 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 ### Project layout
 
 ```text
+Makefile               every command (run `make` for the list)
+Dockerfile             container image: frontend build → Go build → distroless
+.githooks/pre-commit   runs `make check` before each commit (`make hooks` installs it)
 backend/
+  .golangci.yml        Go lint rules
   cmd/server/          main: config, MongoDB, startup, `reset-admin` command
   internal/api/        JSON API and the Fiber app
   internal/web/        pages, admin, autosave, bulk actions, media and about handlers
@@ -207,10 +225,12 @@ backend/
   internal/media/      image uploads (GridFS)
   internal/web/dist/   frontend build output, embedded into the binary
 frontend/
+  build.mjs            esbuild: server.js, app.js and admin.js into backend/internal/web/dist
+  eslint.config.js     frontend lint rules
   src/App.tsx          public pages;  src/pages/About.tsx
   src/admin/           admin screens, visual editor, autosave, Markdown serializer
   src/components/      layout, Markdown renderer, contents
-  src/lib/             i18n dictionaries, article parser, countries, date formatting
+  src/lib/             i18n dictionaries, article parser, countries, dates, query strings, useHydrated
   src/server.tsx       server entry (run by goja)
   src/client.tsx       app.js entry;  src/admin-client.tsx  admin.js entry
   test/                frontend tests (node:test)
@@ -222,7 +242,8 @@ MongoDB collections: `posts` (one document per translation, unique on slug and l
 
 The server bundle runs in goja, which has the ECMAScript standard library but no DOM, Node or `Intl` APIs. Frontend code must therefore:
 
-- render identically in goja and the browser: no `window` or `Date.now()` during render; browser-only work goes in `useEffect`
+- render identically in goja and the browser: no `window` or `Date.now()` during render; browser-only work goes in event handlers or `useEffect`, and UI that exists only in the browser (the visual editor, tag chips, local times) switches in with `useHydrated()` (`lib/useHydrated.ts`)
+- use only the ECMAScript standard library while rendering: browser APIs such as `URLSearchParams` don't exist in goja (build query strings with `lib/query.ts`)
 - avoid `Intl` during render: dates are formatted by `lib/format.ts` with the i18n dictionaries, and times in the admin are formatted after hydration
 - keep browser-only libraries out of the server bundle: the visual editor is replaced by a plain textarea there (`admin/RichEditor.server.tsx`, swapped in by `build.mjs`)
 
@@ -230,19 +251,32 @@ Pages are full server renders and links are plain `<a>` tags; there is no client
 
 ## Testing
 
-`make test` runs:
+- **`make test-unit`** runs quickly, with no database:
+  - **Frontend** (`npm test` in `frontend/`, Node's built-in test runner): the Markdown renderer and editor serializer (e.g. text that looks like Markdown, links with parentheses, combined bold/italic), the article parser, dates and dictionaries, countries and flags, tag normalization (checked against the same cases as the Go version) and the password strength meter.
+  - **Backend** (`go test ./...`): stores, the API, server-side rendering, public and admin pages, autosave, bulk actions, categories and tags, uploads, security checks and helper functions, using in-memory stores.
+- **`make test-integration`** runs the MongoDB store tests against a real database: the `make mongo` container by default, or `MONGODB_TEST_URI=mongodb://…`. Each test creates a temporary database and drops it afterwards.
 
-- **Frontend** (`npm test` in `frontend/`): the Markdown renderer and the editor's serializer, including tricky cases like text that looks like Markdown, links with parentheses, and combined bold/italic.
-- **Backend** (`go test ./...`): stores, API, SSR, pages, admin, autosave, bulk actions, uploads and security checks, using in-memory stores.
+## Development workflow
 
-Set `MONGODB_TEST_URI=mongodb://localhost:27018` to also run the MongoDB integration tests. Each creates a temporary database and drops it afterwards.
+1. After cloning, run `make hooks` once to install the pre-commit hook.
+2. While working, `make run` serves the app (with `make mongo` for the database) and `make watch` rebuilds the frontend.
+3. Before committing, the hook runs `make check` (lint and unit tests) automatically. Run `make fmt` to fix formatting, and `make test-integration` when you change MongoDB code.
+4. `make up` rebuilds and restarts the containers with your changes.
+
+## Code quality
+
+- **Go:** [golangci-lint](https://golangci-lint.run) v2 with its standard linters (errcheck, govet, ineffassign, staticcheck, unused), plus gofmt and goimports (`backend/.golangci.yml`). `make lint` runs a pinned version, built with the project's Go on first use.
+- **Frontend:** ESLint with the recommended JavaScript, [typescript-eslint](https://typescript-eslint.io), React and React Hooks rules (`frontend/eslint.config.js`), plus `tsc --noEmit`.
+- **Pre-commit hook:** run `make hooks` once per clone. Before every commit, `make check` runs lint and the unit tests, and the commit is stopped if anything fails (full output in `.git/pre-commit.log`). It checks the working tree, including unstaged changes. Skip it once with `git commit --no-verify`.
 
 ## Design
 
-The site keeps Wikipedia's structure (Contents sidebar, infobox, language menu, featured and recent sections) with a simple, modern look: a narrow reading column, serif headings, hairline dividers and one accent color. On narrower screens the infobox moves above the text, and on phones the contents list moves into the article. The **Appearance** menu switches between Automatic, Light and Dark, stored in a `theme` cookie that the server reads so the right theme renders from the first paint.
+The site keeps Wikipedia's structure (Contents sidebar, infobox, language menu, a featured article and articles grouped by category) with a simple, modern look: a narrow reading column, serif headings, hairline dividers and one accent color. On narrower screens the infobox moves above the text, and on phones the contents list moves into the article. The **Appearance** menu switches between Automatic, Light and Dark, stored in a `theme` cookie that the server reads so the right theme renders from the first paint.
 
 ## Troubleshooting
 
 - **`make up` prints a `192.168.x.x` URL instead of `localhost:8080`:** macOS is blocking the container port forwarder. Allow `container` under **System Settings → Privacy & Security → Local Network**, then run `make up` again.
 - **Containers can't reach each other by name:** Apple `container` needs an admin-configured DNS domain for that, so `make up` passes the app MongoDB's IP address instead. If MongoDB restarts on its own, run `make up` again.
 - **Frontend changes don't show up:** the bundles are embedded when Go compiles. Run `make frontend` (or keep `make watch` running) and restart `make run`, or run `make up` for the containers.
+- **A commit is refused:** the pre-commit hook found a lint error or failing test; the output is in `.git/pre-commit.log`, and `make check` reproduces it. `make fmt` fixes formatting. In an emergency, `git commit --no-verify` skips the hook once.
+- **The first `make lint` is slow:** it builds the pinned golangci-lint version once (about a minute); later runs take seconds.

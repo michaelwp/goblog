@@ -46,7 +46,7 @@ func (h *pages) adminUpload(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only: a close error can't lose data
 	data, err := io.ReadAll(io.LimitReader(f, media.MaxSize+1))
 	if err != nil {
 		return h.fail(c, err)

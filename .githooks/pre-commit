@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pre-commit hook: lint and unit tests must pass before a commit is made.
+# Installed by `make hooks` (git config core.hooksPath .githooks).
+# Skip once with `git commit --no-verify`.
+#
+# It checks the working tree, so unstaged changes are checked too.
+
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-commit: running lint and unit tests (make check)…"
+if ! make --no-print-directory check >.git/pre-commit.log 2>&1; then
+  echo
+  tail -n 40 .git/pre-commit.log
+  echo
+  echo "pre-commit: FAILED. Full output: .git/pre-commit.log"
+  echo "Fix the problems above, or skip this check once with: git commit --no-verify"
+  exit 1
+fi
+echo "pre-commit: lint and unit tests passed."

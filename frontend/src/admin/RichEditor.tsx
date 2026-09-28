@@ -6,6 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Markdown } from "../components/Markdown";
+import { useHydrated } from "../lib/useHydrated";
 import { EditorFallback, type EditorProps } from "./EditorFallback";
 import { type PMNode, toMarkdown } from "./toMarkdown";
 import { uploadImage } from "./upload";
@@ -18,9 +19,7 @@ const SAFE_LINK = /^(https?:\/\/|mailto:|\/(?!\/)|#)/i;
 // a preview rendered exactly as the site renders it.
 export function RichEditor(props: EditorProps) {
   // First render matches the server's plain textarea; swap after hydration.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted ? <VisualEditor {...props} /> : <EditorFallback {...props} />;
+  return useHydrated() ? <VisualEditor {...props} /> : <EditorFallback {...props} />;
 }
 
 // The editor learns about selection changes from a "selectionchange" event
@@ -148,7 +147,9 @@ function VisualEditor({ name, defaultValue, rows = 16, invalid, describedBy, pla
       setMarkdown(md);
     },
   });
-  editorRef.current = editor;
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   function switchTo(next: Mode) {
     // Coming back to Visual from any tab: reload Markdown edits made meanwhile.
@@ -238,21 +239,6 @@ function Toolbar({ editor, uploading, onImage, onLink }: { editor: Editor; uploa
   });
   const run = (fn: (c: ReturnType<Editor["chain"]>) => ReturnType<Editor["chain"]>) => () => fn(editor.chain().focus()).run();
 
-  const Btn = (p: { label: string; title: string; active?: boolean; onClick: () => void; disabled?: boolean; className?: string }) => (
-    <button
-      type="button"
-      className={`md-tool ${p.className ?? ""}`}
-      title={p.title}
-      aria-label={p.title}
-      aria-pressed={p.active === undefined ? undefined : p.active}
-      onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
-      onClick={p.onClick}
-      disabled={p.disabled}
-    >
-      {p.label}
-    </button>
-  );
-
   return (
     <div className="md-tools" role="toolbar" aria-label="Formatting">
       <div className="md-group">
@@ -272,27 +258,48 @@ function Toolbar({ editor, uploading, onImage, onLink }: { editor: Editor; uploa
         </select>
       </div>
       <div className="md-group">
-        <Btn label="B" title="Bold (⌘B)" className="md-bold" active={s.bold} onClick={run((c) => c.toggleBold())} />
-        <Btn label="I" title="Italic (⌘I)" className="md-italic" active={s.italic} onClick={run((c) => c.toggleItalic())} />
-        <Btn label="S" title="Strikethrough (⌘⇧S)" className="md-strike" active={s.strike} onClick={run((c) => c.toggleStrike())} />
-        <Btn label="</>" title="Inline code (⌘E)" active={s.code} onClick={run((c) => c.toggleCode())} />
-        <Btn label="Link" title="Link (⌘K)" active={s.link} onClick={onLink} />
+        <ToolButton label="B" title="Bold (⌘B)" className="md-bold" active={s.bold} onClick={run((c) => c.toggleBold())} />
+        <ToolButton label="I" title="Italic (⌘I)" className="md-italic" active={s.italic} onClick={run((c) => c.toggleItalic())} />
+        <ToolButton label="S" title="Strikethrough (⌘⇧S)" className="md-strike" active={s.strike} onClick={run((c) => c.toggleStrike())} />
+        <ToolButton label="</>" title="Inline code (⌘E)" active={s.code} onClick={run((c) => c.toggleCode())} />
+        <ToolButton label="Link" title="Link (⌘K)" active={s.link} onClick={onLink} />
       </div>
       <div className="md-group">
-        <Btn label="• List" title="Bulleted list" active={s.bullet} onClick={run((c) => c.toggleBulletList())} />
-        <Btn label="1. List" title="Numbered list" active={s.ordered} onClick={run((c) => c.toggleOrderedList())} />
-        <Btn label="“ ”" title="Quote" active={s.quote} onClick={run((c) => c.toggleBlockquote())} />
-        <Btn label="{ }" title="Code block" active={s.codeBlock} onClick={run((c) => c.toggleCodeBlock())} />
-        <Btn label="—" title="Divider" onClick={run((c) => c.setHorizontalRule())} />
+        <ToolButton label="• List" title="Bulleted list" active={s.bullet} onClick={run((c) => c.toggleBulletList())} />
+        <ToolButton label="1. List" title="Numbered list" active={s.ordered} onClick={run((c) => c.toggleOrderedList())} />
+        <ToolButton label="“ ”" title="Quote" active={s.quote} onClick={run((c) => c.toggleBlockquote())} />
+        <ToolButton label="{ }" title="Code block" active={s.codeBlock} onClick={run((c) => c.toggleCodeBlock())} />
+        <ToolButton label="—" title="Divider" onClick={run((c) => c.setHorizontalRule())} />
       </div>
       <div className="md-group">
-        <Btn label={uploading ? "Uploading…" : "Image"} title="Upload image" onClick={onImage} disabled={uploading} />
+        <ToolButton label={uploading ? "Uploading…" : "Image"} title="Upload image" onClick={onImage} disabled={uploading} />
       </div>
       <div className="md-group">
-        <Btn label="Undo" title="Undo (⌘Z)" onClick={run((c) => c.undo())} disabled={!s.canUndo} />
-        <Btn label="Redo" title="Redo (⌘⇧Z)" onClick={run((c) => c.redo())} disabled={!s.canRedo} />
+        <ToolButton label="Undo" title="Undo (⌘Z)" onClick={run((c) => c.undo())} disabled={!s.canUndo} />
+        <ToolButton label="Redo" title="Redo (⌘⇧Z)" onClick={run((c) => c.redo())} disabled={!s.canRedo} />
       </div>
     </div>
+  );
+}
+
+type ToolButtonProps = { label: string; title: string; active?: boolean; onClick: () => void; disabled?: boolean; className?: string };
+
+// A toolbar button. Defined at module level so React keeps the same button
+// between renders (a component created inside Toolbar would be remounted).
+function ToolButton(p: ToolButtonProps) {
+  return (
+    <button
+      type="button"
+      className={`md-tool ${p.className ?? ""}`}
+      title={p.title}
+      aria-label={p.title}
+      aria-pressed={p.active === undefined ? undefined : p.active}
+      onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
+      onClick={p.onClick}
+      disabled={p.disabled}
+    >
+      {p.label}
+    </button>
   );
 }
 

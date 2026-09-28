@@ -56,10 +56,55 @@ run: frontend ## Run the app locally (needs MongoDB; see `make mongo`)
 watch: frontend/node_modules ## Rebuild frontend bundles on change (restart `make run` to pick them up)
 	cd frontend && npm run watch
 
+# ---------------------------------------------------------- quality ----
+
+GOLANGCI_LINT_VERSION ?= v2.14.0
+# Built with the project's Go version on first use, then cached.
+GOLANGCI_LINT = go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+MONGODB_TEST_URI ?= mongodb://localhost:$(MONGO_PORT)
+
 .PHONY: test
-test: frontend ## Type-check and test the frontend, then vet and test the backend
-	cd frontend && npm run typecheck && npm test
-	cd backend && go vet ./... && go test ./...
+test: test-unit ## Run the unit tests (same as test-unit)
+
+.PHONY: test-unit
+test-unit: frontend ## Unit tests: frontend (node:test) and backend (go test, in-memory stores)
+	cd frontend && npm test
+	cd backend && go test ./...
+
+.PHONY: test-integration
+test-integration: frontend ## Integration tests against a real MongoDB (start one with `make mongo`)
+	cd backend && MONGODB_TEST_URI=$(MONGODB_TEST_URI) go test -count=1 -run Mongo ./...
+
+.PHONY: test-all
+test-all: test-unit test-integration ## Unit and integration tests
+
+.PHONY: cover
+cover: frontend ## Backend test coverage per package (writes backend/coverage.out)
+	cd backend && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1
+
+.PHONY: lint
+lint: lint-go lint-frontend ## Lint Go (golangci-lint) and the frontend (ESLint + TypeScript)
+
+.PHONY: lint-go
+lint-go: ## Go: golangci-lint's standard linters, gofmt and goimports
+	cd backend && $(GOLANGCI_LINT) run ./...
+
+.PHONY: lint-frontend
+lint-frontend: frontend/node_modules ## Frontend: ESLint (TypeScript, React, React Hooks) and a type check
+	cd frontend && npm run lint && npm run typecheck
+
+.PHONY: fmt
+fmt: frontend/node_modules ## Fix formatting and auto-fixable lint issues
+	cd backend && $(GOLANGCI_LINT) fmt ./...
+	cd frontend && npx eslint --fix .
+
+.PHONY: check
+check: lint test-unit ## Everything the pre-commit hook runs: lint and unit tests
+
+.PHONY: hooks
+hooks: ## Install the git pre-commit hook (runs `make check` before each commit)
+	git config core.hooksPath .githooks
+	@echo "Pre-commit hook installed. Skip it once with: git commit --no-verify"
 
 .PHONY: clean
 clean: ## Remove build output

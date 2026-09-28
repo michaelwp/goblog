@@ -1,10 +1,11 @@
 // Admin screens for managing articles. Every form posts to the Go server
 // and works without JavaScript; hydration only adds the delete confirmation.
-import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, type ReactNode, useRef, useState } from "react";
 
 import { countriesFor, flagEmoji } from "../lib/countries";
 import { formatDate } from "../lib/format";
 import { queryString } from "../lib/query";
+import { useHydrated } from "../lib/useHydrated";
 import { getDictionary, type Locale } from "../lib/i18n";
 import type { AdminForm, BulkResult, BulkVerb, PageData, Post, PostStatus } from "../types";
 import { PasswordFields } from "./PasswordField";
@@ -439,11 +440,8 @@ export function AdminList({ posts, languages, notice, filter, bulk, categories, 
 // Formats an ISO time in the viewer's locale, after hydration only: the
 // server renders without Intl, and the times must match for hydration.
 function useLocalTime(iso: string): string {
-  const [text, setText] = useState("");
-  useEffect(() => {
-    setText(iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
-  }, [iso]);
-  return text;
+  const hydrated = useHydrated();
+  return hydrated && iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 }
 
 function AutosaveStatus({ state }: { state: AutosaveState }) {

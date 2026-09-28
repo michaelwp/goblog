@@ -109,7 +109,7 @@ func (s *MongoStore) Get(ctx context.Context, id string) (Image, error) {
 	if err != nil {
 		return Image{}, fmt.Errorf("open image: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }() // read-only: a close error can't lose data
 
 	var meta metadata
 	if err := bson.Unmarshal(stream.GetFile().Metadata, &meta); err != nil {

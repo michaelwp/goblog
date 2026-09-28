@@ -7,7 +7,6 @@ import { App, head } from "./App";
 import { isAdminPage, type PageData } from "./types";
 
 declare global {
-  // eslint-disable-next-line no-var
   var render: (pageJSON: string) => string;
 }
 

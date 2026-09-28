@@ -13,3 +13,6 @@ backend/internal/web/dist/*
 
 # Frontend test build output
 frontend/.test-build/
+
+# Test coverage output
+backend/coverage.out

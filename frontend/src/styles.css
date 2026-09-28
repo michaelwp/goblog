@@ -2477,3 +2477,9 @@ form:has(.row-check:checked) .bulk-bar {
   margin: 0;
   padding: 0;
 }
+
+/* Keep elements scrolled into view (keyboard focus, anchors) clear of the
+   sticky admin header instead of hidden underneath it. */
+html:has(.admin) {
+  scroll-padding-top: 4.5rem;
+}

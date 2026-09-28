@@ -98,3 +98,17 @@ func TestMongoStore(t *testing.T) {
 		t.Errorf("direct insert of a duplicate name: err = %v, want duplicate key", err)
 	}
 }
+
+func TestCategoryName(t *testing.T) {
+	c := Category{Slug: "web", Names: map[string]string{"en": "Web", "id": ""}}
+	if c.Name("en") != "Web" || c.Name("id") != "Web" || c.Name("fr") != "Web" {
+		t.Errorf("Name fallbacks: %q %q %q", c.Name("en"), c.Name("id"), c.Name("fr"))
+	}
+	if (Category{Slug: "bare"}).Name("en") != "bare" {
+		t.Error("a category without names should be named by its slug")
+	}
+	err := &NameTakenError{Lang: "id", Name: "Keamanan", By: "security"}
+	if err.Error() != `the id name "Keamanan" is already used by category "security"` {
+		t.Errorf("NameTakenError = %q", err.Error())
+	}
+}

@@ -25,20 +25,24 @@ function snapshot(form: HTMLFormElement): string {
 export function useAutosave(form: RefObject<HTMLFormElement | null>, url: string, onCreated: (editUrl: string) => void) {
   const [state, setState] = useState<AutosaveState>({ kind: "idle" });
   const saved = useRef<string | null>(null);
-  const lastAttempt = useRef(Date.now());
+  const lastAttempt = useRef(0); // set when the effect starts
   const busy = useRef(false);
   const inflight = useRef<Promise<void> | null>(null);
   const createdUrl = useRef<string | null>(null);
   const submitting = useRef(false);
+  // Latest url/onCreated for the long-lived effect below, updated after render.
   const urlRef = useRef(url);
-  urlRef.current = url;
   const onCreatedRef = useRef(onCreated);
-  onCreatedRef.current = onCreated;
+  useEffect(() => {
+    urlRef.current = url;
+    onCreatedRef.current = onCreated;
+  });
   const saveNowRef = useRef<() => Promise<boolean>>(async () => true);
 
   useEffect(() => {
     const el = form.current;
     if (!el) return;
+    lastAttempt.current = Date.now(); // the first autosave comes a minute after opening
     // Wait a tick so the editor has filled in the form before the baseline.
     const start = setTimeout(() => (saved.current = snapshot(el)), 500);
 
