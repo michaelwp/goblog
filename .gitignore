@@ -1,0 +1,15 @@
+node_modules/
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Frontend build output (embedded into the Go binary); regenerate with `make frontend`.
+backend/internal/web/dist/*
+!backend/internal/web/dist/.gitkeep
+
+# Go binaries
+/bin/
+
+# Frontend test build output
+frontend/.test-build/
