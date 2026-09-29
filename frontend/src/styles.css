@@ -275,7 +275,11 @@ a:hover {
   position: relative;
   font-size: 0.875rem;
 }
-.appearance {
+/* Language and appearance menus, together at the right of the header. */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   margin-left: auto;
 }
 .appearance summary,
@@ -799,7 +803,8 @@ mark {
     padding: 0 1.25rem;
   }
   .wordmark-tagline,
-  .appearance-label {
+  .appearance-label,
+  .lang-label {
     display: none;
   }
   .header-search {

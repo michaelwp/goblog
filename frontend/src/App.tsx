@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from "react";
 import { Contents } from "./components/Article";
 import { renderBlock } from "./components/Markdown";
 import { ShareBar } from "./components/Share";
-import { LanguageMenu, Layout, MainMenu, SearchForm, SiteName, TitleBar, type Translation } from "./components/Layout";
+import { Layout, MainMenu, SearchForm, SiteName, TitleBar, type Translation } from "./components/Layout";
 import { categoryHref, categoryName, PostMeta, TagLinks, tagHref } from "./components/Taxonomy";
 import { parseBody, readingMinutes, sections } from "./lib/article";
 import { formatDate } from "./lib/format";
@@ -51,13 +51,19 @@ function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Ext
   const [featured] = posts;
   const onlyOther = groups.length === 1 && groups[0].category.slug === "";
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
+    <Layout
+      lang={lang}
+      theme={theme}
+      year={year}
+      t={t}
+      translations={otherLocales(lang, (l) => `/${l}`)}
+      sidebar={<MainMenu lang={lang} t={t} categories={categories} />}
+    >
       <section className="mp-banner">
         <div className="mp-hero-row">
           <h1 className="mp-welcome">
             <WithSiteName text={t.welcome} name={t.siteTitle} />
           </h1>
-          <LanguageMenu t={t} translations={otherLocales(lang, (l) => `/${l}`)} />
         </div>
         <p className="mp-tagline">{t.welcomeTagline}</p>
         <p className="mp-count">{format(posts.length === 1 ? t.articleCountOne : t.articleCount, { n: posts.length })}</p>
@@ -132,6 +138,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
       theme={theme}
       year={year}
       t={t}
+      translations={translations}
       sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}
       footer={<p>{format(t.footerPublished, { date: published })}</p>}
     >
@@ -147,7 +154,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
         </div>
       )}
       <BackToMain lang={lang} t={t} />
-      <TitleBar t={t} title={post.title} tab={t.article} translations={translations} />
+      <TitleBar t={t} title={post.title} tab={t.article} />
       <p className="from-site">{t.fromSite}</p>
       {post.summary && <p className="article-lead">{post.summary}</p>}
       {!preview && <ShareBar url={url} title={post.title} t={t} className="share-top" />}
@@ -252,8 +259,16 @@ function SearchPage(props: WithT<Extract<PageData, { page: "search" }>>) {
   else summary = format(count === 1 ? t.filteredCountOne : t.filteredCount, { n: count });
 
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} query={query} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
-      <TitleBar t={t} title={title} tab={tab} translations={otherLocales(lang, params)} />
+    <Layout
+      lang={lang}
+      theme={theme}
+      year={year}
+      t={t}
+      query={query}
+      translations={otherLocales(lang, params)}
+      sidebar={<MainMenu lang={lang} t={t} categories={categories} />}
+    >
+      <TitleBar t={t} title={title} tab={tab} />
       {scope === "category" && <p className="from-site">{format(t.categoryIntro, { name: catName })}</p>}
       {scope === "tag" && <p className="from-site">{format(t.tagIntro, { tag: `#${tag}` })}</p>}
 
@@ -347,7 +362,7 @@ function NotFoundPage({ lang, theme, year, categories, t }: WithT<Extract<PageDa
   const [before, after] = t.notFoundHint.split("{link}");
   return (
     <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
-      <TitleBar t={t} title={t.notFoundTitle} tab={t.article} translations={[]} />
+      <TitleBar t={t} title={t.notFoundTitle} tab={t.article} />
       <div className="notice">
         <p>
           <b>{t.notFoundBody}</b>

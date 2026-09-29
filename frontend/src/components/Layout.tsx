@@ -11,12 +11,14 @@ type LayoutProps = {
   year: number;
   t: Dictionary;
   query?: string;
+  // The same page in the site's other languages, for the header's language menu.
+  translations?: Translation[];
   sidebar: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
 };
 
-export function Layout({ lang, theme, year, t, query, sidebar, footer, children }: LayoutProps) {
+export function Layout({ lang, theme, year, t, query, translations = [], sidebar, footer, children }: LayoutProps) {
   return (
     <div className="page">
       <a className="skip-link" href="#content">
@@ -31,7 +33,10 @@ export function Layout({ lang, theme, year, t, query, sidebar, footer, children 
           </span>
         </a>
         <SearchForm lang={lang} t={t} query={query} className="header-search" />
-        <AppearanceMenu t={t} initial={theme} />
+        <div className="header-actions">
+          <LanguageMenu t={t} translations={translations} />
+          <AppearanceMenu t={t} initial={theme} />
+        </div>
       </header>
 
       <div className="layout">
@@ -90,22 +95,16 @@ export function MainMenu({ lang, t, categories }: { lang: Locale; t: Dictionary;
 
 export type Translation = { lang: Locale; href: string };
 
-// The page heading row: title on the left, language menu on the right, and
-// the tab strip underneath, modelled on Wikipedia's article header.
-export function TitleBar(props: {
-  t: Dictionary;
-  title: string;
-  tab: string;
-  translations: Translation[];
-}) {
-  const { t, title, tab, translations } = props;
+// The page heading: title, then the tab strip underneath, modelled on
+// Wikipedia's article header. The language menu lives in the site header.
+export function TitleBar(props: { t: Dictionary; title: string; tab: string }) {
+  const { t, title, tab } = props;
   return (
     <div className="title-bar">
       <div className="title-row">
         <h1 id="top" className="page-title">
           {title}
         </h1>
-        <LanguageMenu t={t} translations={translations} />
       </div>
       <div className="tabs">
         <span className="tab is-selected">{tab}</span>
@@ -121,11 +120,11 @@ export function LanguageMenu({ t, translations }: { t: Dictionary; translations:
   const label = (n === 1 ? t.languagesOne : t.languagesMany).replace("{n}", String(n));
   return (
     <details className="lang-menu">
-      <summary>
+      <summary aria-label={label}>
         <span className="lang-icon" aria-hidden="true">
           文A
         </span>
-        {label}
+        <span className="lang-label">{label}</span>
       </summary>
       <ul>
         {translations.map(({ lang, href }) => (

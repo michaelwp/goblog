@@ -21,8 +21,8 @@ export function AboutPage({ lang, theme, year, profile, categories, t }: Props) 
   const country = profile.country ? countryName(profile.country, lang) : "";
 
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}>
-      <TitleBar t={t} title={title} tab={t.about} translations={translations} />
+    <Layout lang={lang} theme={theme} year={year} t={t} translations={translations} sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}>
+      <TitleBar t={t} title={title} tab={t.about} />
       <p className="from-site">{t.fromSite}</p>
 
       {profile.empty ? (
