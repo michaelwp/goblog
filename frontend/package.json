@@ -7,7 +7,7 @@
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild 'test/*.test.tsx' --bundle --platform=node --format=esm --packages=external --jsx=automatic --outdir=.test-build --out-extension:.js=.mjs --log-level=warning && node --test .test-build/",
+    "test": "esbuild 'test/*.test.tsx' --bundle --platform=node --format=esm --packages=external --jsx=automatic --outdir=.test-build --out-extension:.js=.mjs --log-level=warning && node --test '.test-build/*.test.mjs'",
     "lint": "eslint ."
   },
   "dependencies": {
