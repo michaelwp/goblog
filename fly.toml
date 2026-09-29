@@ -16,8 +16,8 @@ primary_region = 'sin'
   min_machines_running = 0
   processes = ['app']
 
+# Fly's smallest machine (shared-cpu-1x, 256 MB). It stops when idle (above),
+# so it's only billed while serving requests.
 [[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 256
+  size = 'shared-cpu-1x'
+  memory = '256mb'
