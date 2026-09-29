@@ -26,7 +26,7 @@ export function Layout({ lang, theme, year, t, query, sidebar, footer, children 
         <a className="logo" href={`/${lang}`} aria-label={t.mainPage}>
           <LogoMark />
           <span className="wordmark">
-            <span className="wordmark-title">{t.siteTitle}</span>
+            <span className="wordmark-title">{wordmarkTitle(t.siteTitle)}</span>
             <span className="wordmark-tagline">{t.siteTagline}</span>
           </span>
         </a>
@@ -140,12 +140,29 @@ export function LanguageMenu({ t, translations }: { t: Dictionary; translations:
   );
 }
 
+// The "Go" logo mark spells the start of "GoBlog.dev", so the title beside it
+// drops it: the header reads "[Go] Blog.dev".
+function wordmarkTitle(title: string) {
+  return title.startsWith("Go") ? title.slice(2) : title;
+}
+
+// The site name in running text, with "Go" set white on black like the logo.
+export function SiteName({ name }: { name: string }) {
+  if (!name.startsWith("Go")) return name;
+  return (
+    <span className="site-name">
+      <span className="go-badge">Go</span>
+      {name.slice(2)}
+    </span>
+  );
+}
+
 function LogoMark() {
   return (
     <svg className="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
-      <rect x="1" y="1" width="38" height="38" rx="11" fill="currentColor" />
-      <text x="20" y="28.5" textAnchor="middle" fontFamily="'Iowan Old Style', Charter, Georgia, serif" fontSize="24" fontWeight="600" style={{ fill: "var(--bg)" }}>
-        G
+      <rect x="1" y="1" width="38" height="38" rx="11" />
+      <text x="20" y="27" textAnchor="middle" fontFamily="'Iowan Old Style', Charter, Georgia, serif" fontSize="19" fontWeight="600" fill="#fff">
+        Go
       </text>
     </svg>
   );

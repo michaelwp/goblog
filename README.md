@@ -19,6 +19,7 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - English and Indonesian editions. `/` redirects by browser language, and every page links to its translation.
 - A Wikipedia-inspired layout with a modern look: Contents sidebar, infobox, featured article, articles grouped by category, and an About page.
 - Categories and tags: every category and tag has its own page, and search can combine words, a category and a tag.
+- Sharing: round logo buttons above and below each article (X, Facebook, LinkedIn, WhatsApp, Telegram, email, copy link, and the phone's share sheet), and pages carry Open Graph tags so shared links show a title, summary and the article's first image. No third-party scripts.
 - Light, dark or automatic appearance, remembered without a flash on load.
 - Fast, crawlable pages: complete HTML from the server, `hreflang` alternates, and a small script (`app.js`) for interactivity.
 
@@ -109,6 +110,7 @@ Run `make` to list every target.
 | `MONGODB_DB` | Database name (default `blog`). |
 | `PORT` | HTTP port (default `8080`). |
 | `LANGUAGES` | Supported languages, default first (default `en,id`). Keep in sync with `frontend/src/lib/i18n.ts`. |
+| `SITE_URL` | Public address used in share links and link previews, e.g. `https://goblog.dev` (default: the address each request came in on, which is right unless several domains point at the app). |
 | `MONGODB_TEST_URI` | MongoDB for `make test-integration` (default: `localhost:27018`, the `make mongo` container). Tests create and drop their own temporary databases. |
 
 No secrets go in `.env`: the admin password is stored, hashed, in MongoDB.

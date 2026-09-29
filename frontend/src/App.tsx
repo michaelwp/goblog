@@ -2,7 +2,8 @@ import { Fragment, type ReactNode } from "react";
 
 import { Contents } from "./components/Article";
 import { renderBlock } from "./components/Markdown";
-import { LanguageMenu, Layout, MainMenu, SearchForm, TitleBar, type Translation } from "./components/Layout";
+import { ShareBar } from "./components/Share";
+import { LanguageMenu, Layout, MainMenu, SearchForm, SiteName, TitleBar, type Translation } from "./components/Layout";
 import { categoryHref, categoryName, PostMeta, TagLinks, tagHref } from "./components/Taxonomy";
 import { parseBody, readingMinutes, sections } from "./lib/article";
 import { formatDate } from "./lib/format";
@@ -34,6 +35,18 @@ function otherLocales(lang: Locale, href: (l: Locale) => string): Translation[] 
 
 type WithT<P> = P & { t: Dictionary };
 
+// A dictionary string with {site} replaced by the styled site name.
+function WithSiteName({ text, name }: { text: string; name: string }) {
+  const [before, after = ""] = text.split("{site}");
+  return (
+    <>
+      {before}
+      <SiteName name={name} />
+      {after}
+    </>
+  );
+}
+
 function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Extract<PageData, { page: "home" }>>) {
   const [featured] = posts;
   const onlyOther = groups.length === 1 && groups[0].category.slug === "";
@@ -41,7 +54,9 @@ function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Ext
     <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
       <section className="mp-banner">
         <div className="mp-hero-row">
-          <h1 className="mp-welcome">{format(t.welcome, { site: t.siteTitle })}</h1>
+          <h1 className="mp-welcome">
+            <WithSiteName text={t.welcome} name={t.siteTitle} />
+          </h1>
           <LanguageMenu t={t} translations={otherLocales(lang, (l) => `/${l}`)} />
         </div>
         <p className="mp-tagline">{t.welcomeTagline}</p>
@@ -102,7 +117,7 @@ function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Ext
   );
 }
 
-function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
+function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, url, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
   const blocks = parseBody(post.body);
   const toc = sections(blocks);
   const translations = availableLanguages.filter((l) => l !== lang).map((l) => ({ lang: l, href: `/${l}/posts/${post.slug}` }));
@@ -133,6 +148,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
       )}
       <TitleBar t={t} title={post.title} tab={t.article} translations={translations} />
       <p className="from-site">{t.fromSite}</p>
+      {!preview && <ShareBar url={url} title={post.title} t={t} className="share-top" />}
 
       <div className="article">
         <div className="article-body">
@@ -147,6 +163,8 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
               <TagLinks lang={lang} tags={post.tags} />
             </footer>
           )}
+
+          {!preview && <ShareBar url={url} title={post.title} t={t} />}
         </div>
 
         <aside className="article-aside">
@@ -352,14 +370,28 @@ function highlight(text: string, query: string): ReactNode {
   return parts;
 }
 
-// Document <head> fields for a page; the Go server writes them into the HTML shell.
-export function head(props: PublicPageData): { title: string; description: string } {
+type Head = { title: string; description: string; siteName?: string; image?: string };
+
+// Document <head> fields for a page; the Go server writes them into the HTML
+// shell, including the Open Graph tags that social networks read for link previews.
+export function head(props: PublicPageData): Head {
+  return { siteName: getDictionary(props.lang).siteTitle, ...pageHead(props) };
+}
+
+function pageHead(props: PublicPageData): Head {
   const t = getDictionary(props.lang);
   switch (props.page) {
     case "home":
       return { title: `${t.siteTitle} – ${t.siteTagline}`, description: t.siteDescription };
-    case "post":
-      return { title: `${props.post.title} – ${t.siteTitle}`, description: props.post.summary };
+    case "post": {
+      // The article's first image becomes its preview picture.
+      const img = parseBody(props.post.body).find((b) => b.kind === "img");
+      return {
+        title: `${props.post.title} – ${t.siteTitle}`,
+        description: props.post.summary,
+        image: img?.kind === "img" ? img.src : undefined,
+      };
+    }
     case "search": {
       if (props.scope === "category") {
         const name = categoryName(props.categories, props.category) || props.category;

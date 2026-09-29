@@ -15,6 +15,8 @@ type Result struct {
 	HTML        string `json:"html"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	SiteName    string `json:"siteName"`
+	Image       string `json:"image"` // preview picture for link shares; may be a path
 }
 
 // Renderer is safe for concurrent use. A goja runtime is single-threaded, so

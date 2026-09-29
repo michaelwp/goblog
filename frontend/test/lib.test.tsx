@@ -10,6 +10,7 @@ import { countriesFor, countryName, flagEmoji } from "../src/lib/countries";
 import { formatDate } from "../src/lib/format";
 import { format, getDictionary, hasLocale, locales } from "../src/lib/i18n";
 import { queryString } from "../src/lib/query";
+import { shareLinks } from "../src/lib/share";
 
 describe("article parser", () => {
   test("splits a body into blocks", () => {
@@ -163,5 +164,24 @@ describe("password strength", () => {
 
   test("reports which rules are met", () => {
     assert.deepEqual(passwordStrength("abcdefghijkl").met, [true, false, true, false, false]);
+  });
+});
+
+describe("share links", () => {
+  const links = shareLinks("https://goblog.dev/en/posts/a&b", "Tips & tricks");
+  const href = (network: string) => links.find((l) => l.network === network)?.href;
+
+  test("encode the address and title for each network", () => {
+    assert.equal(href("x"), "https://x.com/intent/post?url=https%3A%2F%2Fgoblog.dev%2Fen%2Fposts%2Fa%26b&text=Tips%20%26%20tricks");
+    assert.equal(href("facebook"), "https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fgoblog.dev%2Fen%2Fposts%2Fa%26b");
+    assert.equal(href("whatsapp"), "https://wa.me/?text=Tips%20%26%20tricks%20https%3A%2F%2Fgoblog.dev%2Fen%2Fposts%2Fa%26b");
+    assert.equal(href("email"), "mailto:?subject=Tips%20%26%20tricks&body=https%3A%2F%2Fgoblog.dev%2Fen%2Fposts%2Fa%26b");
+  });
+
+  test("cover each network once", () => {
+    assert.deepEqual(
+      links.map((l) => l.network),
+      ["x", "facebook", "linkedin", "whatsapp", "telegram", "email"],
+    );
   });
 });

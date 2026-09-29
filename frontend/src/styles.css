@@ -116,17 +116,22 @@ a:hover {
 .logo {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.45rem; /* close enough that the "Go" mark and "Blog.dev" read as one name */
   color: var(--text);
 }
 .logo:hover {
   text-decoration: none;
 }
+/* Black and white in both themes, like the favicon; the outline keeps its
+   edge on the dark page. */
 .logo-mark {
   width: 2.1rem;
   height: 2.1rem;
   flex: none;
-  color: var(--text);
+}
+.logo-mark rect {
+  fill: #000;
+  stroke: light-dark(transparent, #3a3a40);
 }
 .wordmark {
   display: flex;
@@ -138,6 +143,19 @@ a:hover {
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+/* "Go" in the site name, white on black in both themes like the logo; the
+   outline keeps its edge on the dark page. */
+.site-name {
+  white-space: nowrap;
+}
+.go-badge {
+  margin-right: 0.1em;
+  padding: 0 0.2em 0.04em;
+  border-radius: 0.22em;
+  background: #000;
+  color: #fff;
+  box-shadow: 0 0 0 1px light-dark(transparent, #3a3a40);
 }
 .wordmark-tagline {
   font-size: 0.75rem;
@@ -2106,6 +2124,91 @@ form:has(.row-check:checked) .bulk-bar {
   margin-top: 2.5rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--line);
+}
+/* Share buttons end the article; under the tags they share the tags' rule. */
+.share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.article-tags + .share {
+  margin-top: 1rem;
+  padding-top: 0;
+  border-top: 0;
+}
+.share-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.article-body .share-list li {
+  margin: 0;
+  padding: 0;
+}
+/* Every share button is the same circle; hovering fills it with the network's color. */
+.share-button {
+  --brand: var(--accent);
+  --on-brand: var(--bg); /* the accent is light in dark mode, so draw on it in the page color */
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.share-button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.share-button:hover,
+.share-button:focus-visible {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
+  text-decoration: none;
+}
+.share-x,
+.share-facebook,
+.share-linkedin,
+.share-whatsapp,
+.share-telegram {
+  --on-brand: #fff;
+}
+.share-x {
+  --brand: light-dark(#000, #333);
+}
+.share-facebook {
+  --brand: #1877f2;
+}
+.share-linkedin {
+  --brand: #0a66c2;
+}
+.share-whatsapp {
+  --brand: #25d366;
+}
+.share-telegram {
+  --brand: #26a5e4;
+}
+/* Above the article: no rule, just a little room before the text. */
+.share.share-top {
+  margin: 1rem 0 0;
+  padding-top: 0;
+  border-top: 0;
 }
 .article-tags-label {
   font-size: 0.7rem;

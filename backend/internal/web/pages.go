@@ -33,6 +33,9 @@ type Config struct {
 	Media      media.Store
 	Renderer   *ssr.Renderer
 	Languages  []string // supported languages; the first is the default
+	// SiteURL is the public origin used in share links and link previews,
+	// e.g. https://goblog.dev. Empty means the one the request came in on.
+	SiteURL string
 
 	// Credentials holds the admin password hash and session key.
 	Credentials auth.Store
@@ -65,6 +68,7 @@ type postPage struct {
 	AvailableLanguages []string   `json:"availableLanguages"`
 	Preview            bool       `json:"preview"`        // admin preview of an unpublished article
 	PendingChanges     bool       `json:"pendingChanges"` // the preview shows unpublished edits to a live article
+	URL                string     `json:"url"`            // absolute address, for share links
 }
 
 type notFoundPage struct {
@@ -207,8 +211,10 @@ func (h *pages) renderPost(c *fiber.Ctx, p posts.Post, preview bool) error {
 			alternates = append(alternates, alternate{Lang: l, Href: "/" + l + "/posts/" + p.Slug})
 		}
 	}
-	return h.render(c, fiber.StatusOK, p.Lang, alternates,
-		postPage{base: b, Post: p, AvailableLanguages: langs, Preview: preview, PendingChanges: pending})
+	return h.render(c, fiber.StatusOK, p.Lang, alternates, postPage{
+		base: b, Post: p, AvailableLanguages: langs, Preview: preview, PendingChanges: pending,
+		URL: h.origin(c) + "/" + p.Lang + "/posts/" + p.Slug,
+	})
 }
 
 func (h *pages) notFound(c *fiber.Ctx) error {
@@ -231,10 +237,43 @@ func (h *pages) fail(c *fiber.Ctx, err error) error {
 
 type alternate struct{ Lang, Href string }
 
+// origin is the site's public scheme and host, without a trailing slash.
+func (h *pages) origin(c *fiber.Ctx) string {
+	if h.cfg.SiteURL != "" {
+		return strings.TrimRight(h.cfg.SiteURL, "/")
+	}
+	return c.BaseURL()
+}
+
+// absolute turns a site path like /media/x.png into a full URL; link previews
+// need one. Full URLs are returned unchanged.
+func absolute(origin, u string) string {
+	if strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") {
+		return origin + u
+	}
+	return u
+}
+
 func (h *pages) render(c *fiber.Ctx, status int, lang string, alternates []alternate, page any) error {
 	res, err := h.cfg.Renderer.Render(page)
 	if err != nil {
 		return h.fail(c, err)
+	}
+	// Link previews on social networks, for public pages only (admin pages
+	// have no site name). Errors and article previews get no address: they
+	// aren't meant to be shared.
+	origin, canonical := h.origin(c), ""
+	pp, isPost := page.(postPage)
+	if res.SiteName != "" && status == fiber.StatusOK && !pp.Preview {
+		canonical = origin + c.Path()
+	}
+	ogType := "website"
+	if isPost {
+		ogType = "article"
+	}
+	image := ""
+	if res.Image != "" {
+		image = absolute(origin, res.Image)
 	}
 	var buf bytes.Buffer
 	err = shell.Execute(&buf, map[string]any{
@@ -243,6 +282,10 @@ func (h *pages) render(c *fiber.Ctx, status int, lang string, alternates []alter
 		"Title":       res.Title,
 		"Description": res.Description,
 		"Alternates":  alternates,
+		"URL":         canonical,
+		"OGType":      ogType,
+		"SiteName":    res.SiteName,
+		"Image":       image,
 		"Version":     h.version,
 		"Bundle":      bundleOf(page),
 		"HTML":        template.HTML(res.HTML), // produced by React, which escapes content
@@ -269,8 +312,16 @@ var shell = template.Must(template.New("shell").Parse(`<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
 <meta name="description" content="{{.Description}}">
-{{range .Alternates}}<link rel="alternate" hreflang="{{.Lang}}" href="{{.Href}}">
-{{end}}<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='24' cy='24' r='22' fill='%23fff' stroke='%23202122' stroke-width='3'/%3E%3Ctext x='24' y='33' text-anchor='middle' font-family='Georgia,serif' font-size='26' font-weight='700' fill='%23202122'%3EG%3C/text%3E%3C/svg%3E">
+{{if .SiteName}}{{if .URL}}<link rel="canonical" href="{{.URL}}">
+<meta property="og:url" content="{{.URL}}">
+{{end}}<meta property="og:type" content="{{.OGType}}">
+<meta property="og:title" content="{{.Title}}">
+<meta property="og:description" content="{{.Description}}">
+<meta property="og:site_name" content="{{.SiteName}}">
+{{if .Image}}<meta property="og:image" content="{{.Image}}">
+{{end}}<meta name="twitter:card" content="{{if .Image}}summary_large_image{{else}}summary{{end}}">
+{{end}}{{range .Alternates}}<link rel="alternate" hreflang="{{.Lang}}" href="{{.Href}}">
+{{end}}<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='11' fill='%23000'/%3E%3Ctext x='24' y='32.5' text-anchor='middle' font-family='Georgia,serif' font-size='24' font-weight='700' fill='%23fff'%3EGo%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/assets/{{.Bundle}}.css?v={{.Version}}">
 </head>
 <body>

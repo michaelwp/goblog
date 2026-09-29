@@ -169,6 +169,63 @@ func TestNotFoundPages(t *testing.T) {
 	}
 }
 
+func TestArticleShareLinksAndPreviewTags(t *testing.T) {
+	seed := posts.SeedPosts()
+	for i := range seed {
+		if seed[i].Slug == "hello-world" && seed[i].Lang == "en" {
+			seed[i].Body = "![Cover](/media/cover.png)\n\n" + seed[i].Body
+		}
+	}
+	app := newApp(t, seed)
+
+	code, body, _ := get(t, app, "/en/posts/hello-world")
+	if code != 200 {
+		t.Fatalf("status %d", code)
+	}
+	for _, want := range []string{
+		`<link rel="canonical" href="http://example.com/en/posts/hello-world">`,
+		`<meta property="og:url" content="http://example.com/en/posts/hello-world">`,
+		`<meta property="og:type" content="article">`,
+		`<meta property="og:site_name" content="GoBlog.dev">`,
+		`<meta property="og:image" content="http://example.com/media/cover.png">`,
+		`<meta name="twitter:card" content="summary_large_image">`,
+		`<div class="share share-top" role="group" aria-label="Share this article">`, // above the article
+		`<div class="share" role="group" aria-label="Share this article">`,           // and below it
+		`href="https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2Fexample.com%2Fen%2Fposts%2Fhello-world"`,
+		`aria-label="Share on LinkedIn"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("article missing %q", want)
+		}
+	}
+	if n := strings.Count(body, `class="share-button share-facebook"`); n != 2 {
+		t.Errorf("%d Facebook buttons, want 2 (top and bottom)", n)
+	}
+
+	// Pages that aren't articles get a plain card; errors get no address.
+	_, body, _ = get(t, app, "/en")
+	for _, want := range []string{`<meta property="og:type" content="website">`, `<meta name="twitter:card" content="summary">`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/en missing %q", want)
+		}
+	}
+	if _, body, _ = get(t, app, "/en/nope"); strings.Contains(body, "og:url") {
+		t.Error("404 page has an og:url")
+	}
+}
+
+func TestAbsolute(t *testing.T) {
+	for in, want := range map[string]string{
+		"/media/a.png":           "https://goblog.dev/media/a.png",
+		"https://cdn.test/a.png": "https://cdn.test/a.png",
+		"//cdn.test/a.png":       "//cdn.test/a.png",
+	} {
+		if got := absolute("https://goblog.dev", in); got != want {
+			t.Errorf("absolute(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAssetsServedFromEmbed(t *testing.T) {
 	app := newApp(t, posts.SeedPosts())
 	code, body, h := get(t, app, "/assets/app.js")

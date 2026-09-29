@@ -108,6 +108,7 @@ func main() {
 		Credentials: credentials,
 		Renderer:    renderer,
 		Languages:   languages,
+		SiteURL:     os.Getenv("SITE_URL"),
 	})
 
 	go func() {

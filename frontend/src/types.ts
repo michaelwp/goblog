@@ -36,7 +36,14 @@ type PageBase = { lang: Locale; theme: Theme; year: number; categories?: NavCate
 // Pages of the public site, hydrated by app.js.
 export type PublicPageData = PageBase & (
   | { page: "home"; posts: Post[]; groups: { category: NavCategory; posts: Post[] }[] }
-  | { page: "post"; post: Post; availableLanguages: Locale[]; preview: boolean; pendingChanges: boolean }
+  | {
+      page: "post";
+      post: Post;
+      availableLanguages: Locale[];
+      preview: boolean;
+      pendingChanges: boolean;
+      url: string; // the article's absolute address, for sharing
+    }
   | {
       page: "search";
       scope: "search" | "category" | "tag";
