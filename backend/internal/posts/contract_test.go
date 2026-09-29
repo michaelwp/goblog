@@ -172,6 +172,20 @@ func testTaxonomy(t *testing.T, r Repository) {
 			t.Errorf("hello-world/%s meta = %q %v; SetMeta must update every translation", lang, p.Category, p.Tags)
 		}
 	}
+	if err := r.SetCover(ctx, "hello-world", "/media/0123456789abcdef01234567.png"); err != nil {
+		t.Fatal(err)
+	}
+	for _, lang := range []string{"en", "id"} {
+		if p, _ := r.Get(ctx, "hello-world", lang); p.Cover != "/media/0123456789abcdef01234567.png" {
+			t.Errorf("hello-world/%s cover = %q; SetCover must update every translation", lang, p.Cover)
+		}
+	}
+	if list, _ := r.List(ctx, "en"); !slices.ContainsFunc(list, func(p Post) bool { return p.Cover != "" }) {
+		t.Error("List must return covers")
+	}
+	if p, _ := r.Get(ctx, "why-ssr", "en"); p.Cover != "" {
+		t.Errorf("why-ssr cover = %q; SetCover must only change its own article", p.Cover)
+	}
 
 	slugs := func(f Filter) []string {
 		ps, err := r.Find(ctx, f)

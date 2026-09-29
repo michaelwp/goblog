@@ -193,6 +193,15 @@ func (s *MongoStore) SetMeta(ctx context.Context, slug, category string, tags []
 	return nil
 }
 
+func (s *MongoStore) SetCover(ctx context.Context, slug, cover string) error {
+	_, err := s.coll.UpdateMany(ctx, bson.D{{Key: "slug", Value: slug}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "cover", Value: cover}}}})
+	if err != nil {
+		return fmt.Errorf("set article cover: %w", err)
+	}
+	return nil
+}
+
 func (s *MongoStore) ReassignCategory(ctx context.Context, from, to string) (int, error) {
 	res, err := s.coll.UpdateMany(ctx, bson.D{{Key: "category", Value: from}},
 		bson.D{{Key: "$set", Value: bson.D{{Key: "category", Value: to}}}})

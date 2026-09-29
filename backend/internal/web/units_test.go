@@ -91,7 +91,7 @@ func TestValidatePassword(t *testing.T) {
 	}
 }
 
-func TestPhotoURLProblem(t *testing.T) {
+func TestImageURLProblem(t *testing.T) {
 	for url, wantOK := range map[string]bool{
 		"/media/0123456789abcdef01234567.png":      true,
 		"/media/0123456789abcdef01234567.svg":      false, // not an upload type
@@ -107,9 +107,13 @@ func TestPhotoURLProblem(t *testing.T) {
 		"javascript:alert(1)":                      false,
 		"https://":                                 false,
 	} {
-		if got := photoURLProblem(url) == ""; got != wantOK {
-			t.Errorf("photoURLProblem(%q) ok = %v, want %v (%s)", url, got, wantOK, photoURLProblem(url))
+		if got := imageURLProblem(url, "photo") == ""; got != wantOK {
+			t.Errorf("imageURLProblem(%q) ok = %v, want %v (%s)", url, got, wantOK, imageURLProblem(url, "photo"))
 		}
+	}
+	// Messages name the field's own upload button.
+	if msg := imageURLProblem("https://drive.google.com/file/d/x/view", "image"); !strings.Contains(msg, "Use Upload image instead") {
+		t.Errorf("cover message = %q, want it to name Upload image", msg)
 	}
 }
 

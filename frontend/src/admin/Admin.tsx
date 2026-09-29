@@ -9,7 +9,7 @@ import { useHydrated } from "../lib/useHydrated";
 import { getDictionary, type Locale } from "../lib/i18n";
 import type { AdminForm, BulkResult, BulkVerb, PageData, Post, PostStatus } from "../types";
 import { PasswordFields } from "./PasswordField";
-import { PhotoField } from "./PhotoField";
+import { ImageField, PhotoField } from "./PhotoField";
 import { RichEditor } from "./RichEditor";
 import { TagInput } from "./TagInput";
 import { type AutosaveState, useAutosave } from "./useAutosave";
@@ -729,6 +729,17 @@ export function AdminEdit(props: Page<"adminEdit">) {
         <Field label="Summary" name="summary" error={errors.summary} hint="One or two sentences shown on the main page, in search results and to search engines.">
           <textarea name="summary" defaultValue={form.summary} rows={2} maxLength={300} />
         </Field>
+
+        <ImageField
+          name="cover"
+          label="Cover image (optional)"
+          button="Upload image"
+          empty="No cover"
+          hint="Shown above the article and as the picture when it's shared on social media; without one, the blog's logo is used. Shared by all translations. A wide image (1200×630) works best. PNG, JPEG, GIF or WebP, up to 5 MB."
+          defaultValue={form.cover}
+          error={errors.cover}
+          wide
+        />
 
         <EditorField label="Body" name="body" defaultValue={form.body} rows={20} error={errors.body} />
 

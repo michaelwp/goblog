@@ -11,6 +11,7 @@ export type Post = {
   status: PostStatus;
   category: string; // category slug, "" for none (shared by all translations)
   tags: string[] | null;
+  cover?: string; // optional cover image (shared by all translations); also the link-preview picture
   // Unpublished edits to a published article (admin pages only).
   draft?: { title: string; summary: string; body: string; publishedAt: string; savedAt: string } | null;
 };
@@ -43,6 +44,7 @@ export type PublicPageData = PageBase & (
       preview: boolean;
       pendingChanges: boolean;
       url: string; // the article's absolute address, for sharing
+      related?: Post[] | null; // articles sharing tags or the category, best match first, without bodies
     }
   | {
       page: "search";
@@ -147,6 +149,7 @@ export type AdminForm = {
   date: string; // YYYY-MM-DD
   category: string;
   tags: string; // comma-separated
+  cover: string; // uploaded /media/ path or https:// address, "" for none
 };
 
 export type CategoryForm = { slug: string; names: Record<string, string> | null };

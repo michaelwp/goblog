@@ -29,6 +29,10 @@ type Post struct {
 	// on every translation (see SetMeta) and are not part of Draft.
 	Category string   `json:"category" bson:"category"` // category slug, or "" for none
 	Tags     []string `json:"tags" bson:"tags"`
+	// Cover is the article's optional cover image: an uploaded /media/ path
+	// or an https:// address. Like Category it is shared by every
+	// translation (see SetCover) and applies right away, not via Draft.
+	Cover string `json:"cover" bson:"cover,omitempty"`
 	// Draft holds unpublished edits to a Published post. Readers keep seeing
 	// the fields above until the draft is published (ApplyDraft). Only
 	// Published posts carry one; drafts and disabled posts are edited in place.
@@ -109,6 +113,8 @@ type Repository interface {
 	DeleteAll(ctx context.Context, slug string) (int, error)
 	// SetMeta sets the category and tags of every translation of slug.
 	SetMeta(ctx context.Context, slug, category string, tags []string) error
+	// SetCover sets the cover image of every translation of slug ("" for none).
+	SetCover(ctx context.Context, slug, cover string) error
 	// ReassignCategory moves every post in category from to category to
 	// ("" for none) and reports how many translations changed.
 	ReassignCategory(ctx context.Context, from, to string) (int, error)
@@ -264,6 +270,16 @@ func (s *MemoryStore) SetMeta(_ context.Context, slug, category string, tags []s
 	defer s.mu.Unlock()
 	for lang, p := range s.posts[slug] {
 		p.Category, p.Tags = category, slices.Clone(tags)
+		s.posts[slug][lang] = p
+	}
+	return nil
+}
+
+func (s *MemoryStore) SetCover(_ context.Context, slug, cover string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for lang, p := range s.posts[slug] {
+		p.Cover = cover
 		s.posts[slug][lang] = p
 	}
 	return nil

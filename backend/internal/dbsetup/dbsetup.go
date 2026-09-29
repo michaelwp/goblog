@@ -118,6 +118,7 @@ func schemas(languages []string) []collection {
 				"status":      bson.M{"enum": []string{string(posts.Draft), string(posts.Published), string(posts.Disabled)}},
 				"category":    typ("string"),
 				"tags":        bson.M{"bsonType": []string{"array", "null"}, "maxItems": posts.MaxTags, "items": typ("string")},
+				"cover":       typ("string"), // optional
 				"draft": bson.M{"bsonType": []string{"object", "null"}, "properties": bson.M{
 					"title":       typ("string"),
 					"summary":     typ("string"),

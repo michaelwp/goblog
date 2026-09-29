@@ -69,6 +69,9 @@ type postPage struct {
 	Preview            bool       `json:"preview"`        // admin preview of an unpublished article
 	PendingChanges     bool       `json:"pendingChanges"` // the preview shows unpublished edits to a live article
 	URL                string     `json:"url"`            // absolute address, for share links
+	// Related are other articles in the same language sharing tags or the
+	// category, best match first, without their bodies.
+	Related []posts.Post `json:"related"`
 }
 
 type notFoundPage struct {
@@ -118,6 +121,7 @@ func Register(app *fiber.App, cfg Config) {
 	}))
 
 	app.Get("/media/:file", h.media)
+	app.Get(shareImagePath, shareImage)
 	h.registerAdmin(app) // before "/:lang", which would otherwise match "/admin"
 	h.announceSetup()
 	app.Get("/", h.root)
@@ -205,6 +209,14 @@ func (h *pages) renderPost(c *fiber.Ctx, p posts.Post, preview bool) error {
 			b.Categories = append(b.Categories, navCategory{Slug: cat.Slug, Name: cat.Name(p.Lang)})
 		}
 	}
+	list, err := h.cfg.Store.List(c.UserContext(), p.Lang)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	related := posts.Related(p, list, posts.RelatedLimit)
+	for i := range related {
+		related[i].Body, related[i].Draft = "", nil // the page only lists them
+	}
 	var alternates []alternate
 	if !preview {
 		for _, l := range langs {
@@ -213,7 +225,7 @@ func (h *pages) renderPost(c *fiber.Ctx, p posts.Post, preview bool) error {
 	}
 	return h.render(c, fiber.StatusOK, p.Lang, alternates, postPage{
 		base: b, Post: p, AvailableLanguages: langs, Preview: preview, PendingChanges: pending,
-		URL: h.origin(c) + "/" + p.Lang + "/posts/" + p.Slug,
+		URL: h.origin(c) + "/" + p.Lang + "/posts/" + p.Slug, Related: related,
 	})
 }
 
@@ -271,7 +283,8 @@ func (h *pages) render(c *fiber.Ctx, status int, lang string, alternates []alter
 	if isPost {
 		ogType = "article"
 	}
-	image := ""
+	// The article's cover when it has one, otherwise the blog's logo.
+	image := origin + shareImagePath
 	if res.Image != "" {
 		image = absolute(origin, res.Image)
 	}
@@ -318,8 +331,9 @@ var shell = template.Must(template.New("shell").Parse(`<!doctype html>
 <meta property="og:title" content="{{.Title}}">
 <meta property="og:description" content="{{.Description}}">
 <meta property="og:site_name" content="{{.SiteName}}">
-{{if .Image}}<meta property="og:image" content="{{.Image}}">
-{{end}}<meta name="twitter:card" content="{{if .Image}}summary_large_image{{else}}summary{{end}}">
+<meta property="og:image" content="{{.Image}}">
+<meta property="og:image:alt" content="{{.Title}}">
+<meta name="twitter:card" content="summary_large_image">
 {{end}}{{range .Alternates}}<link rel="alternate" hreflang="{{.Lang}}" href="{{.Href}}">
 {{end}}<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='11' fill='%23000'/%3E%3Ctext x='24' y='32.5' text-anchor='middle' font-family='Georgia,serif' font-size='24' font-weight='700' fill='%23fff'%3EGo%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/assets/{{.Bundle}}.css?v={{.Version}}">

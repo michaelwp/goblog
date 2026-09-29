@@ -2,9 +2,28 @@ import { useRef, useState } from "react";
 
 import { uploadImage } from "./upload";
 
-// Profile photo: upload a file (stored with the blog's other images) or paste
-// a direct image address. Shows a live preview and notices broken links.
-export function PhotoField({ defaultValue, error }: { defaultValue: string; error?: string }) {
+// An image field: upload a file (stored with the blog's other images) or
+// paste a direct image address. Shows a live preview and notices broken
+// links. Used for the profile photo and for article covers.
+export function ImageField({
+  name,
+  label,
+  button,
+  empty,
+  hint,
+  defaultValue,
+  error,
+  wide = false,
+}: {
+  name: string;
+  label: string;
+  button: string; // the upload button's text, e.g. "Upload photo"
+  empty: string; // shown in the preview when there's no image
+  hint: string;
+  defaultValue: string;
+  error?: string;
+  wide?: boolean; // a landscape preview instead of a square one
+}) {
   const [url, setUrl] = useState(defaultValue);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -36,15 +55,15 @@ export function PhotoField({ defaultValue, error }: { defaultValue: string; erro
 
   return (
     <div className={message ? "field has-error" : "field"}>
-      <span className="field-label">Photo</span>
-      <div className="photo-field">
+      <span className="field-label">{label}</span>
+      <div className={wide ? "photo-field is-wide" : "photo-field"}>
         <div className="photo-preview" aria-hidden="true">
-          {previewable && !broken ? <img src={url} alt="" onError={() => setBroken(true)} onLoad={() => setBroken(false)} /> : <span>No photo</span>}
+          {previewable && !broken ? <img src={url} alt="" onError={() => setBroken(true)} onLoad={() => setBroken(false)} /> : <span>{empty}</span>}
         </div>
         <div className="photo-controls">
           <div className="photo-buttons">
             <button type="button" className="btn btn-primary" onClick={() => fileInput.current?.click()} disabled={uploading}>
-              {uploading ? "Uploading…" : "Upload photo"}
+              {uploading ? "Uploading…" : button}
             </button>
             {url && (
               <button type="button" className="btn btn-quiet" onClick={() => change("")}>
@@ -54,11 +73,11 @@ export function PhotoField({ defaultValue, error }: { defaultValue: string; erro
           </div>
           <input
             type="text"
-            name="photoUrl"
+            name={name}
             value={url}
             onChange={(e) => change(e.target.value.trim())}
             placeholder="…or paste a direct image address (https://…)"
-            aria-label="Photo address"
+            aria-label={`${label} address`}
             spellCheck={false}
           />
           <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
@@ -67,10 +86,27 @@ export function PhotoField({ defaultValue, error }: { defaultValue: string; erro
       {message ? (
         <span className="field-error">{message}</span>
       ) : broken ? (
-        <span className="field-error">This address doesn&apos;t load as an image. Links to share pages (Google Drive, Photos, Dropbox) don&apos;t work; use Upload photo.</span>
+        <span className="field-error">
+          This address doesn&apos;t load as an image. Links to share pages (Google Drive, Photos, Dropbox) don&apos;t work; use {button}.
+        </span>
       ) : (
-        <span className="field-hint">A square photo works best. PNG, JPEG, GIF or WebP, up to 5 MB.</span>
+        <span className="field-hint">{hint}</span>
       )}
     </div>
+  );
+}
+
+// The About page's profile photo.
+export function PhotoField({ defaultValue, error }: { defaultValue: string; error?: string }) {
+  return (
+    <ImageField
+      name="photoUrl"
+      label="Photo"
+      button="Upload photo"
+      empty="No photo"
+      hint="A square photo works best. PNG, JPEG, GIF or WebP, up to 5 MB."
+      defaultValue={defaultValue}
+      error={error}
+    />
   );
 }

@@ -160,7 +160,7 @@ func (h *pages) validateProfile(f profileForm) (profile.Profile, map[string]stri
 		errs["name"] = "Keep the name under 100 characters."
 	}
 	if f.PhotoURL != "" {
-		if msg := photoURLProblem(f.PhotoURL); msg != "" {
+		if msg := imageURLProblem(f.PhotoURL, "photo"); msg != "" {
 			errs["photoUrl"] = msg
 		}
 	}
@@ -216,25 +216,28 @@ func (h *pages) validateProfile(f profileForm) (profile.Profile, map[string]stri
 
 var uploadedImage = regexp.MustCompile(`^/media/[0-9a-f]{24}\.(png|jpg|gif|webp)$`)
 
-// photoURLProblem explains why u can't be used as a profile photo, or
-// returns "". Share links from photo and file services open a web page
-// rather than the image, so they're caught with a specific message.
-func photoURLProblem(u string) string {
+// imageURLProblem explains why u can't be used as an image (a profile photo
+// or an article cover), or returns "". what is "photo" or "image", matching
+// the form's "Upload photo" or "Upload image" button.
+// Share links from photo and file services open a web page rather than the
+// image, so they're caught with a specific message.
+func imageURLProblem(u, what string) string {
+	button := "Upload " + what
 	if uploadedImage.MatchString(u) {
 		return ""
 	}
 	if !isWebURL(u) {
-		return "Upload a photo, or enter a full image address starting with https://"
+		return "Upload a " + what + ", or enter a full image address starting with https://"
 	}
 	parsed, _ := url.Parse(u)
 	host := strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www.")
 	switch {
 	case host == "drive.google.com" || host == "docs.google.com":
-		return "That's a Google Drive page, not the image itself, so browsers can't display it. Use Upload photo instead."
+		return "That's a Google Drive page, not the image itself, so browsers can't display it. Use " + button + " instead."
 	case host == "photos.google.com" || host == "photos.app.goo.gl":
-		return "That's a Google Photos page, not the image itself, so browsers can't display it. Use Upload photo instead."
+		return "That's a Google Photos page, not the image itself, so browsers can't display it. Use " + button + " instead."
 	case host == "dropbox.com" && !strings.Contains(parsed.RawQuery, "raw=1"):
-		return "That's a Dropbox page, not the image itself. Use Upload photo instead."
+		return "That's a Dropbox page, not the image itself. Use " + button + " instead."
 	}
 	return ""
 }

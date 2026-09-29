@@ -19,7 +19,9 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - English and Indonesian editions. `/` redirects by browser language, and every page links to its translation.
 - A Wikipedia-inspired layout with a modern look: Contents sidebar, infobox, featured article, articles grouped by category, and an About page.
 - Categories and tags: every category and tag has its own page, and search can combine words, a category and a tag.
-- Sharing: round logo buttons above and below each article (X, Facebook, LinkedIn, WhatsApp, Telegram, email, copy link, and the phone's share sheet), and pages carry Open Graph tags so shared links show a title, summary and the article's first image. No third-party scripts.
+- Sharing: round logo buttons above and below each article (X, Facebook, LinkedIn, WhatsApp, Telegram, email, copy link, and the phone's share sheet), and Open Graph tags so shared links show a title, summary and picture. No third-party scripts.
+- Cover images: an optional cover per article, uploaded in the editor and shared by its translations. It's shown above the article and is the picture in link previews; articles without one use the blog's logo (`/share.png`, embedded from `backend/internal/web/share.png`).
+- Related articles: under the infobox, up to five articles sharing the most tags or the category.
 - Light, dark or automatic appearance, remembered without a flash on load.
 - Fast, crawlable pages: complete HTML from the server, `hreflang` alternates, and a small script (`app.js`) for interactivity.
 
@@ -286,7 +288,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main`, every 
 | **Unit tests** | `make test-unit` |
 | **Integration tests** | `make test-integration` against a MongoDB 8 service container |
 | **Container image** | Builds the Dockerfile once the three jobs above pass |
-| **Deploy to Fly.io** | Pushes to `main` only: deploys that image to Fly.io |
+| **Deploy to Fly.io** | Version tags on `main` only: deploys that image to Fly.io |
 
 On pushes to `main` and on version tags, the image is also published to GitHub Container Registry as `ghcr.io/michaelwp/goblog`, tagged:
 - `latest` and `main` for `main`
@@ -295,9 +297,9 @@ On pushes to `main` and on version tags, the image is also published to GitHub C
 
 Pull requests only build the image. A newer push to the same pull request cancels the older run.
 
-- **Releasing a version:** `git tag v1.0.0 && git push origin v1.0.0`.
+- **Releasing a version:** tag a commit on `main` and push the tag: `git tag v1.0.0 && git push origin v1.0.0`. That runs the checks and deploys it.
 - **Image visibility:** the first publish creates a *private* package. To let a server pull it without logging in, make it public under the repository's **Packages → goblog → Package settings**.
-- **Deploying:** every push to `main` that passes the checks is deployed to Fly.io (`fly.toml`). The image job also pushes the image to Fly's registry, and the deploy job runs `flyctl deploy` with that exact image, so Fly doesn't rebuild it. This needs the `FLY_API_TOKEN` repository secret (`make fly-token`). To deploy by hand, run `make fly-deploy`.
+- **Deploying:** only version tags (`v1.2.3`) whose commit is on `main` are deployed to Fly.io (`fly.toml`); pushing to `main` alone doesn't deploy. A tag elsewhere still runs the checks, with a warning that it wasn't deployed. The image job also pushes the image to Fly's registry, and the deploy job runs `flyctl deploy` with that exact image (`registry.fly.io/goblog:1.2.3`), so Fly doesn't rebuild it. This needs the `FLY_API_TOKEN` repository secret (`make fly-token`). To deploy by hand, run `make fly-deploy`.
 
 ### First deploy to Fly.io
 
@@ -305,7 +307,7 @@ Pull requests only build the image. A newer push to the same pull request cancel
 2. Point `MONGODB_URI` in `.env` at a hosted cluster (e.g. MongoDB Atlas), and allow `0.0.0.0/0` in Atlas → Network Access (Fly has no fixed outgoing IP).
 3. `make fly-setup`, then `make fly-deploy`. The site is at `https://<app>.fly.dev`.
 4. Open `/admin` and get the setup code with `make fly-admin-code`.
-5. `make fly-token` so CI can deploy pushes to `main`.
+5. `make fly-token` so CI can deploy version tags pushed on `main`.
 
 Don't also turn on deploys from Fly's GitHub integration in the dashboard, or every push deploys twice.
 

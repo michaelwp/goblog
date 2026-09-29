@@ -65,7 +65,8 @@ type adminForm struct {
 	Date    string `json:"date"` // YYYY-MM-DD
 	// Article-wide: saved to every translation.
 	Category string `json:"category"`
-	Tags     string `json:"tags"` // comma-separated
+	Tags     string `json:"tags"`  // comma-separated
+	Cover    string `json:"cover"` // uploaded /media/ path or https:// address, "" for none
 }
 
 const dateLayout = "2006-01-02"
@@ -411,7 +412,7 @@ func (h *pages) adminNewForm(c *fiber.Ctx) error {
 	if from := c.Query("from"); form.Slug != "" && from != "" {
 		if src, err := h.cfg.Store.Get(c.UserContext(), form.Slug, from); err == nil {
 			form.Date = src.PublishedAt.UTC().Format(dateLayout)
-			form.Category, form.Tags = src.Category, strings.Join(src.Tags, ", ") // shared by all translations
+			form.Category, form.Tags, form.Cover = src.Category, strings.Join(src.Tags, ", "), src.Cover // shared by all translations
 		}
 	}
 	return h.renderEdit(c, fiber.StatusOK, editState{mode: "new", form: form})
@@ -433,8 +434,7 @@ func (h *pages) adminCreate(c *fiber.Ctx) error {
 	if len(errs) > 0 {
 		return h.renderEdit(c, fiber.StatusUnprocessableEntity, editState{mode: "new", form: form, errs: errs})
 	}
-	// Category and tags are shared by every translation of the article.
-	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
+	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
 	return c.Redirect(editURL(p, editNotice(action, status)), fiber.StatusSeeOther)
@@ -460,7 +460,7 @@ func (h *pages) adminEditForm(c *fiber.Ctx) error {
 		form: adminForm{
 			Slug: e.Slug, Lang: e.Lang, Title: e.Title, Summary: e.Summary, Body: e.Body,
 			Date:     e.PublishedAt.UTC().Format(dateLayout),
-			Category: e.Category, Tags: strings.Join(e.Tags, ", "),
+			Category: e.Category, Tags: strings.Join(e.Tags, ", "), Cover: e.Cover,
 		},
 	}
 	if p.Draft != nil {
@@ -496,8 +496,8 @@ func (h *pages) saveEdit(ctx context.Context, existing posts.Post, form adminFor
 		p.Status = status
 		return p, nil // p.Draft is nil: any pending draft is replaced by the form
 	}
-	// Category and tags describe the whole article; they apply right away.
-	existing.Category, existing.Tags = p.Category, p.Tags
+	// Category, tags and cover describe the whole article; they apply right away.
+	existing.Category, existing.Tags, existing.Cover = p.Category, p.Tags, p.Cover
 	existing.Draft = &posts.Revision{
 		Title: p.Title, Summary: p.Summary, Body: p.Body, PublishedAt: p.PublishedAt, SavedAt: time.Now().UTC(),
 	}
@@ -527,8 +527,7 @@ func (h *pages) adminUpdate(c *fiber.Ctx) error {
 	if err := h.cfg.Store.Update(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
-	// Category and tags are shared by every translation of the article.
-	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
+	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
 	notice := editNotice(action, p.Status)
@@ -536,6 +535,15 @@ func (h *pages) adminUpdate(c *fiber.Ctx) error {
 		notice = "revised"
 	}
 	return c.Redirect(editURL(p, notice), fiber.StatusSeeOther)
+}
+
+// saveArticleMeta saves the category, tags and cover, which are shared by
+// every translation of the article.
+func (h *pages) saveArticleMeta(ctx context.Context, p posts.Post) error {
+	if err := h.cfg.Store.SetMeta(ctx, p.Slug, p.Category, p.Tags); err != nil {
+		return err
+	}
+	return h.cfg.Store.SetCover(ctx, p.Slug, p.Cover)
 }
 
 // adminDiscard drops the pending draft of a published article.
@@ -564,7 +572,7 @@ func (h *pages) adminDiscard(c *fiber.Ctx) error {
 
 func autosaveError(c *fiber.Ctx, status int, errs map[string]string) error {
 	msg := "Autosave paused: fix the highlighted fields."
-	for _, key := range []string{"slug", "lang", "title", "date", "summary", "body"} {
+	for _, key := range []string{"slug", "lang", "title", "date", "summary", "cover", "body"} {
 		if m, ok := errs[key]; ok {
 			msg = "Autosave paused: " + m
 			break
@@ -586,8 +594,7 @@ func (h *pages) adminAutosaveNew(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	// Category and tags are shared by every translation of the article.
-	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
+	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
 	return c.JSON(fiber.Map{
@@ -613,8 +620,7 @@ func (h *pages) adminAutosave(c *fiber.Ctx) error {
 	if err := h.cfg.Store.Update(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
-	// Category and tags are shared by every translation of the article.
-	if err := h.cfg.Store.SetMeta(c.UserContext(), p.Slug, p.Category, p.Tags); err != nil {
+	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
 	return c.JSON(fiber.Map{"savedAt": time.Now().UTC().Format(time.RFC3339)})
@@ -717,6 +723,7 @@ func readForm(c *fiber.Ctx) adminForm {
 		Date:     v("date"),
 		Category: v("category"),
 		Tags:     v("tags"),
+		Cover:    v("cover"),
 	}
 }
 
@@ -760,9 +767,14 @@ func (h *pages) validate(ctx context.Context, f adminForm, mode string, status p
 	if msg != "" {
 		errs["tags"] = msg
 	}
+	if f.Cover != "" {
+		if msg := imageURLProblem(f.Cover, "image"); msg != "" {
+			errs["cover"] = msg
+		}
+	}
 	return posts.Post{
 		Slug: f.Slug, Lang: f.Lang, Title: f.Title, Summary: f.Summary, Body: f.Body, PublishedAt: date, Status: status,
-		Category: f.Category, Tags: tags,
+		Category: f.Category, Tags: tags, Cover: f.Cover,
 	}, errs
 }
 

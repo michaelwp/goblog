@@ -172,8 +172,8 @@ func TestNotFoundPages(t *testing.T) {
 func TestArticleShareLinksAndPreviewTags(t *testing.T) {
 	seed := posts.SeedPosts()
 	for i := range seed {
-		if seed[i].Slug == "hello-world" && seed[i].Lang == "en" {
-			seed[i].Body = "![Cover](/media/cover.png)\n\n" + seed[i].Body
+		if seed[i].Slug == "hello-world" {
+			seed[i].Cover = "/media/0123456789abcdef01234567.png"
 		}
 	}
 	app := newApp(t, seed)
@@ -187,30 +187,72 @@ func TestArticleShareLinksAndPreviewTags(t *testing.T) {
 		`<meta property="og:url" content="http://example.com/en/posts/hello-world">`,
 		`<meta property="og:type" content="article">`,
 		`<meta property="og:site_name" content="GoBlog.dev">`,
-		`<meta property="og:image" content="http://example.com/media/cover.png">`,
+		`<meta property="og:image" content="http://example.com/media/0123456789abcdef01234567.png">`, // the cover
 		`<meta name="twitter:card" content="summary_large_image">`,
+		`<figure class="article-cover"><img src="/media/0123456789abcdef01234567.png" alt=""/></figure>`,
 		`<div class="share share-top" role="group" aria-label="Share this article">`, // above the article
 		`<div class="share" role="group" aria-label="Share this article">`,           // and below it
 		`href="https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2Fexample.com%2Fen%2Fposts%2Fhello-world"`,
 		`aria-label="Share on LinkedIn"`,
+		`<p class="article-lead">`, // the summary, under the title
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("article missing %q", want)
 		}
 	}
+	if n := strings.Count(body, `<a href="/en"><span aria-hidden="true">← </span>Back to the main page</a>`); n != 2 {
+		t.Errorf("%d links back to the main page, want 2 (top and bottom)", n)
+	}
 	if n := strings.Count(body, `class="share-button share-facebook"`); n != 2 {
 		t.Errorf("%d Facebook buttons, want 2 (top and bottom)", n)
 	}
 
-	// Pages that aren't articles get a plain card; errors get no address.
-	_, body, _ = get(t, app, "/en")
-	for _, want := range []string{`<meta property="og:type" content="website">`, `<meta name="twitter:card" content="summary">`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("/en missing %q", want)
+	// Without a cover, the blog's logo is the picture; other pages use it too.
+	for _, path := range []string{"/en/posts/why-ssr", "/en"} {
+		_, body, _ = get(t, app, path)
+		if want := `<meta property="og:image" content="http://example.com/share.png">`; !strings.Contains(body, want) {
+			t.Errorf("%s missing %q", path, want)
 		}
+		if strings.Contains(body, `class="article-cover"`) {
+			t.Errorf("%s shows a cover it doesn't have", path)
+		}
+	}
+	if !strings.Contains(body, `<meta property="og:type" content="website">`) {
+		t.Error("/en isn't og:type website")
 	}
 	if _, body, _ = get(t, app, "/en/nope"); strings.Contains(body, "og:url") {
 		t.Error("404 page has an og:url")
+	}
+
+	code, png, headers := get(t, app, "/share.png")
+	if code != 200 || !strings.HasPrefix(png, "\x89PNG") || !strings.HasPrefix(headers["Content-Type"][0], "image/png") {
+		t.Errorf("/share.png: status %d, content type %v", code, headers["Content-Type"])
+	}
+}
+
+func TestArticleSuggestsRelated(t *testing.T) {
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	post := func(slug string, tags ...string) posts.Post {
+		day = day.Add(24 * time.Hour)
+		return posts.Post{Slug: slug, Lang: "en", Title: "Title " + slug, Summary: "S", Body: "Body of " + slug, PublishedAt: day, Status: posts.Published, Tags: tags}
+	}
+	app := newApp(t, []posts.Post{
+		post("main", "go", "web"),
+		post("close", "go", "web"),
+		post("near", "web"),
+		post("far", "rust"),
+	})
+
+	_, body, _ := get(t, app, "/en/posts/main")
+	close, near := strings.Index(body, `<a href="/en/posts/close">Title close</a>`), strings.Index(body, `<a href="/en/posts/near">Title near</a>`)
+	if !strings.Contains(body, `<nav class="related" aria-label="Related articles">`) || close < 0 || near < 0 || close > near {
+		t.Error("expected related articles, best match first")
+	}
+	if strings.Contains(body, "/en/posts/far") {
+		t.Error("an article with nothing in common is suggested")
+	}
+	if strings.Contains(body, "Body of close") {
+		t.Error("suggestions carry their article bodies")
 	}
 }
 

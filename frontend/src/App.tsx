@@ -10,7 +10,7 @@ import { formatDate } from "./lib/format";
 import { queryString } from "./lib/query";
 import { type Dictionary, format, getDictionary, type Locale, locales } from "./lib/i18n";
 import { AboutPage } from "./pages/About";
-import type { PageData, Post, PublicPageData } from "./types";
+import type { NavCategory, PageData, Post, PublicPageData } from "./types";
 
 export function App(props: PublicPageData) {
   const t = getDictionary(props.lang);
@@ -117,7 +117,7 @@ function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Ext
   );
 }
 
-function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, url, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
+function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, url, related, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
   const blocks = parseBody(post.body);
   const toc = sections(blocks);
   const translations = availableLanguages.filter((l) => l !== lang).map((l) => ({ lang: l, href: `/${l}/posts/${post.slug}` }));
@@ -146,9 +146,16 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
           <a href={`/admin/posts/${post.slug}/${post.lang}`}>Back to the editor</a>
         </div>
       )}
+      <BackToMain lang={lang} t={t} />
       <TitleBar t={t} title={post.title} tab={t.article} translations={translations} />
       <p className="from-site">{t.fromSite}</p>
+      {post.summary && <p className="article-lead">{post.summary}</p>}
       {!preview && <ShareBar url={url} title={post.title} t={t} className="share-top" />}
+      {post.cover && (
+        <figure className="article-cover">
+          <img src={post.cover} alt="" />
+        </figure>
+      )}
 
       <div className="article">
         <div className="article-body">
@@ -165,6 +172,11 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
           )}
 
           {!preview && <ShareBar url={url} title={post.title} t={t} />}
+
+          {/* On narrow screens the infobox sits above the text, so suggestions move to the end. */}
+          <RelatedArticles lang={lang} posts={related} categories={categories} t={t} className="related-inline" />
+
+          <BackToMain lang={lang} t={t} className="back-link-end" />
         </div>
 
         <aside className="article-aside">
@@ -214,6 +226,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
               </tr>
             </tbody>
           </table>
+          <RelatedArticles lang={lang} posts={related} categories={categories} t={t} />
         </aside>
       </div>
     </Layout>
@@ -350,6 +363,41 @@ function NotFoundPage({ lang, theme, year, categories, t }: WithT<Extract<PageDa
   );
 }
 
+// Other articles sharing tags or the category, under the infobox.
+function RelatedArticles({ lang, posts, categories, t, className = "" }: { lang: Locale; posts?: Post[] | null; categories?: NavCategory[]; t: Dictionary; className?: string }) {
+  if (!posts?.length) return null;
+  return (
+    <nav className={`related ${className}`.trim()} aria-label={t.relatedArticles}>
+      <h2 className="side-heading">{t.relatedArticles}</h2>
+      <ul className="related-list">
+        {posts.map((p) => {
+          const category = p.category ? categoryName(categories, p.category) : "";
+          return (
+            <li key={p.slug}>
+              <a href={postHref(p)}>{p.title}</a>
+              <span className="related-meta">
+                <time dateTime={p.publishedAt}>{formatDate(p.publishedAt, lang)}</time>
+                {category && ` · ${category}`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+function BackToMain({ lang, t, className = "" }: { lang: Locale; t: Dictionary; className?: string }) {
+  return (
+    <p className={`back-link ${className}`.trim()}>
+      <a href={`/${lang}`}>
+        <span aria-hidden="true">← </span>
+        {t.backToMain}
+      </a>
+    </p>
+  );
+}
+
 function postHref(p: Post) {
   return `/${p.lang}/posts/${p.slug}`;
 }
@@ -383,15 +431,9 @@ function pageHead(props: PublicPageData): Head {
   switch (props.page) {
     case "home":
       return { title: `${t.siteTitle} – ${t.siteTagline}`, description: t.siteDescription };
-    case "post": {
-      // The article's first image becomes its preview picture.
-      const img = parseBody(props.post.body).find((b) => b.kind === "img");
-      return {
-        title: `${props.post.title} – ${t.siteTitle}`,
-        description: props.post.summary,
-        image: img?.kind === "img" ? img.src : undefined,
-      };
-    }
+    case "post":
+      // The cover becomes the link-preview picture; without one the server uses the logo.
+      return { title: `${props.post.title} – ${t.siteTitle}`, description: props.post.summary, image: props.post.cover || undefined };
     case "search": {
       if (props.scope === "category") {
         const name = categoryName(props.categories, props.category) || props.category;
