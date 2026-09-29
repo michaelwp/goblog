@@ -52,6 +52,12 @@ run: frontend ## Run the app locally (needs MongoDB; see `make mongo`)
 		PORT=$${PORT:-$(PORT)} LANGUAGES=$${LANGUAGES:-$(LANGUAGES)} MONGODB_DB=$${MONGODB_DB:-$(MONGODB_DB)} \
 		MONGODB_URI=$${MONGODB_URI:-mongodb://localhost:$(MONGO_PORT)} go run ./cmd/server
 
+.PHONY: db-setup
+db-setup: frontend ## Create the collections, schema validators and indexes in MONGODB_URI (once, on a new database)
+	@$(LOAD_ENV) cd backend && \
+		LANGUAGES=$${LANGUAGES:-$(LANGUAGES)} MONGODB_DB=$${MONGODB_DB:-$(MONGODB_DB)} \
+		MONGODB_URI=$${MONGODB_URI:-mongodb://localhost:$(MONGO_PORT)} go run ./cmd/server setup-db
+
 .PHONY: watch
 watch: frontend/node_modules ## Rebuild frontend bundles on change (restart `make run` to pick them up)
 	cd frontend && npm run watch
@@ -140,16 +146,27 @@ mongo: network ## Start MongoDB in a container, published on localhost:27018
 		printf "."; sleep 1; \
 	done; echo " timed out."; exit 1
 
-# Containers can't resolve each other by name unless an admin has run
-# `sudo container system dns create <domain>`, so the app is given Mongo's IP.
+# The app connects to MONGODB_URI from .env. Inside a container localhost is the
+# container itself, so localhost/127.0.0.1 is rewritten to the Mac's address on
+# the container network. The bundled MongoDB container is started only when
+# MONGODB_URI is unset (the app is then given its IP, since containers can't
+# resolve each other by name) or points at its published port, localhost:$(MONGO_PORT).
 .PHONY: up
-up: image mongo ## Build and run the app + MongoDB in containers
+up: image network ## Build and run the app in a container, connected to MONGODB_URI from .env
+	@$(LOAD_ENV) case "$${MONGODB_URI:-}" in ""|*localhost:$(MONGO_PORT)*|*127.0.0.1:$(MONGO_PORT)*) $(MAKE) --no-print-directory mongo ;; esac
 	@container rm --force $(APP_CONTAINER) >/dev/null 2>&1 || true
 	@# Deletion is asynchronous; wait so the name is free before reusing it.
 	@for i in $$(seq 1 20); do container inspect $(APP_CONTAINER) >/dev/null 2>&1 || break; sleep 0.5; done
-	@$(LOAD_ENV) MONGO_IP=$$(container inspect $(MONGO_CONTAINER) | jq -r '.[0].status.networks[0].ipv4Address | split("/")[0]'); \
+	@$(LOAD_ENV) if [ -z "$${MONGODB_URI:-}" ]; then \
+		MONGO_IP=$$(container inspect $(MONGO_CONTAINER) | jq -r '.[0].status.networks[0].ipv4Address | split("/")[0]'); \
+		MONGODB_URI=mongodb://$$MONGO_IP:27017; \
+	else \
+		HOST_IP=$$(container network inspect $(NETWORK) | jq -r '.[0].status.ipv4Gateway'); \
+		MONGODB_URI=$$(printf '%s' "$$MONGODB_URI" | sed -E "s#(@|://)(localhost|127\.0\.0\.1)([:/,]|$$)#\1$$HOST_IP\3#g"); \
+	fi; \
+	echo "Using MongoDB: $${MONGODB_URI##*@}"; \
 	container run --detach --name $(APP_CONTAINER) --network $(NETWORK) --publish $(PORT):8080 \
-		--env MONGODB_URI=mongodb://$$MONGO_IP:27017 --env MONGODB_DB=$(MONGODB_DB) --env LANGUAGES=$(LANGUAGES) \
+		--env MONGODB_URI="$$MONGODB_URI" --env MONGODB_DB="$${MONGODB_DB:-$(MONGODB_DB)}" --env LANGUAGES=$(LANGUAGES) \
 		$(IMAGE) >/dev/null
 	@APP_IP=$$(container inspect $(APP_CONTAINER) | jq -r '.[0].status.networks[0].ipv4Address | split("/")[0]'); \
 	printf "Waiting for the app"; \

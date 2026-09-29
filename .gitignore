@@ -16,3 +16,4 @@ frontend/.test-build/
 
 # Test coverage output
 backend/coverage.out
+backup/

@@ -1,5 +1,7 @@
 # GoBlog.dev
 
+[![CI](https://github.com/michaelwp/goblog/actions/workflows/ci.yml/badge.svg)](https://github.com/michaelwp/goblog/actions/workflows/ci.yml)
+
 A place for sharing tech, in English and Indonesian.
 
 GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary serves a server-rendered React site, an admin area for writing and managing articles, and a small JSON API, with everything stored in MongoDB.
@@ -36,6 +38,7 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - One command each to run, test, lint and deploy (`make`).
 - Unit tests for both halves (`go test`, `node:test`), plus MongoDB integration tests.
 - Standard lint rules for Go (golangci-lint) and React/TypeScript (ESLint), enforced by a git pre-commit hook.
+- GitHub Actions CI on every push and pull request, publishing a container image to GitHub Container Registry.
 
 ## Quick start
 
@@ -76,6 +79,7 @@ Run `make` to list every target.
 | `make admin-reset` | Forgot the password? Remove it so `/admin` offers setup again |
 | `make destroy` | `down`, then delete the MongoDB volume (**all data**), the network and the image |
 | `make mongo` | Start only MongoDB in a container, on `localhost:27018` |
+| `make db-setup` | Once, on a new database: create the collections with schema validators, and their indexes, in `MONGODB_URI`. Safe to rerun. |
 | `make run` | Build the frontend and run the Go server on your Mac |
 | `make watch` | Rebuild frontend bundles on change (restart `make run` to pick them up) |
 | `make build` | Compile `bin/blog` with the frontend embedded |
@@ -95,7 +99,7 @@ Run `make` to list every target.
 
 | Variable | Purpose |
 | --- | --- |
-| `MONGODB_URI` | MongoDB used by `make run` (default: the `make mongo` container on `localhost:27018`). `make up` always uses its bundled MongoDB container. |
+| `MONGODB_URI` | MongoDB used by `make run` and `make up` (default: the `make mongo` container on `localhost:27018`, which `make up` starts when needed). Any URI works, e.g. Atlas. |
 | `MONGODB_DB` | Database name (default `blog`). |
 | `PORT` | HTTP port (default `8080`). |
 | `LANGUAGES` | Supported languages, default first (default `en,id`). Keep in sync with `frontend/src/lib/i18n.ts`. |
@@ -212,6 +216,7 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 Makefile               every command (run `make` for the list)
 Dockerfile             container image: frontend build → Go build → distroless
 .githooks/pre-commit   runs `make check` before each commit (`make hooks` installs it)
+.github/workflows/     CI/CD: lint, tests, container image (published to ghcr.io)
 backend/
   .golangci.yml        Go lint rules
   cmd/server/          main: config, MongoDB, startup, `reset-admin` command
@@ -262,6 +267,28 @@ Pages are full server renders and links are plain `<a>` tags; there is no client
 2. While working, `make run` serves the app (with `make mongo` for the database) and `make watch` rebuilds the frontend.
 3. Before committing, the hook runs `make check` (lint and unit tests) automatically. Run `make fmt` to fix formatting, and `make test-integration` when you change MongoDB code.
 4. `make up` rebuilds and restarts the containers with your changes.
+
+## CI/CD
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main`, every pull request and every version tag:
+
+| Job | What it runs |
+| --- | --- |
+| **Lint** | golangci-lint (same pinned version as `make lint`), then `make lint-frontend` |
+| **Unit tests** | `make test-unit` |
+| **Integration tests** | `make test-integration` against a MongoDB 8 service container |
+| **Container image** | Builds the Dockerfile once the three jobs above pass |
+
+On pushes to `main` and on version tags, the image is also published to GitHub Container Registry as `ghcr.io/michaelwp/goblog`, tagged:
+- `latest` and `main` for `main`
+- `1.2.3` and `1.2` for tag `v1.2.3`
+- `sha-<commit>` for every build
+
+Pull requests only build the image. A newer push to the same pull request cancels the older run.
+
+- **Releasing a version:** `git tag v1.0.0 && git push origin v1.0.0`.
+- **Image visibility:** the first publish creates a *private* package. To let a server pull it without logging in, make it public under the repository's **Packages → goblog → Package settings**.
+- **Deploying:** any host that runs container images can deploy `ghcr.io/michaelwp/goblog:latest` (or a version tag) with `MONGODB_URI` set. An automatic deploy job can be added once a host is chosen.
 
 ## Code quality
 

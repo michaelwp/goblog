@@ -16,6 +16,7 @@ import (
 	"github.com/michaelputong/blog/backend/internal/api"
 	"github.com/michaelputong/blog/backend/internal/auth"
 	"github.com/michaelputong/blog/backend/internal/categories"
+	"github.com/michaelputong/blog/backend/internal/dbsetup"
 	"github.com/michaelputong/blog/backend/internal/media"
 	"github.com/michaelputong/blog/backend/internal/posts"
 	"github.com/michaelputong/blog/backend/internal/profile"
@@ -27,6 +28,7 @@ import (
 //
 //	server               run the web server
 //	server reset-admin   delete the admin password so it can be set up again
+//	server setup-db      create the collections, schema validators and indexes (run once on a new database)
 func main() {
 	client, err := mongo.Connect(options.Client().ApplyURI(env("MONGODB_URI", "mongodb://localhost:27017")))
 	if err != nil {
@@ -39,6 +41,7 @@ func main() {
 	}
 	db := client.Database(env("MONGODB_DB", "blog"))
 	credentials := auth.NewMongoStore(db)
+	languages := strings.Split(env("LANGUAGES", "en,id"), ",")
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -48,8 +51,24 @@ func main() {
 			}
 			fmt.Println("Admin password removed. Open /admin/setup and use the setup code from the server log to set a new one.")
 			return
+		case "setup-db":
+			setupCtx, setupCancel := context.WithTimeout(context.Background(), time.Minute)
+			defer setupCancel()
+			results, err := dbsetup.Setup(setupCtx, db, languages)
+			for _, r := range results {
+				action := "updated validator"
+				if r.Created {
+					action = "created"
+				}
+				fmt.Printf("%-13s %s\n", r.Collection, action)
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("Database %q is ready: collections, validators and indexes are in place.\n", db.Name())
+			return
 		default:
-			log.Fatalf("unknown command %q (available: reset-admin)", os.Args[1])
+			log.Fatalf("unknown command %q (available: reset-admin, setup-db)", os.Args[1])
 		}
 	}
 
@@ -74,7 +93,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	languages := strings.Split(env("LANGUAGES", "en,id"), ",")
 	cats := categories.NewMongoStore(db)
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	if err := cats.EnsureIndexes(ctx, languages); err != nil {
