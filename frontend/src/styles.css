@@ -122,16 +122,18 @@ a:hover {
 .logo:hover {
   text-decoration: none;
 }
-/* Black and white in both themes, like the favicon; the outline keeps its
-   edge on the dark page. */
+/* White "Go" on black, flipped to black on white in dark mode so it stands
+   out from the dark page. */
 .logo-mark {
   width: 2.1rem;
   height: 2.1rem;
   flex: none;
 }
 .logo-mark rect {
-  fill: #000;
-  stroke: light-dark(transparent, #3a3a40);
+  fill: light-dark(#000, #fff);
+}
+.logo-mark text {
+  fill: light-dark(#fff, #000);
 }
 .wordmark {
   display: flex;
@@ -144,8 +146,7 @@ a:hover {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-/* "Go" in the site name, white on black in both themes like the logo; the
-   outline keeps its edge on the dark page. */
+/* "Go" in the site name, styled like the logo mark (flipped in dark mode). */
 .site-name {
   white-space: nowrap;
 }
@@ -153,9 +154,8 @@ a:hover {
   margin-right: 0.1em;
   padding: 0 0.2em 0.04em;
   border-radius: 0.22em;
-  background: #000;
-  color: #fff;
-  box-shadow: 0 0 0 1px light-dark(transparent, #3a3a40);
+  background: light-dark(#000, #fff);
+  color: light-dark(#fff, #000);
 }
 .wordmark-tagline {
   font-size: 0.75rem;
