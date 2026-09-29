@@ -210,3 +210,53 @@ destroy: down ## `down`, then delete the MongoDB volume (ALL DATA), network, and
 	-container volume delete $(MONGO_VOLUME)
 	-container network delete $(NETWORK)
 	-container image delete $(IMAGE)
+
+# ------------------------------------------------------------------ fly ----
+# Deploys to Fly.io with flyctl (brew install flyctl; fly auth login).
+# App settings live in fly.toml; pushes to main also deploy from CI.
+
+FLY_APP ?= $(shell sed -nE "s/^app *= *['\"](.*)['\"]/\1/p" fly.toml)
+FLY     := fly -a $(FLY_APP)
+
+.PHONY: fly-setup
+fly-setup: ## Once: create the Fly app (if missing) and send it the secrets from .env
+	@$(FLY) status >/dev/null 2>&1 || fly apps create $(FLY_APP)
+	@$(MAKE) --no-print-directory fly-secrets
+
+.PHONY: fly-secrets
+fly-secrets: ## Send MONGODB_URI and MONGODB_DB from .env to Fly (restarts the app)
+	@$(LOAD_ENV) case "$${MONGODB_URI:-}" in \
+		""|*localhost*|*127.0.0.1*) echo "Set MONGODB_URI in .env to a hosted cluster (e.g. MongoDB Atlas) first."; exit 1 ;; \
+	esac; \
+	printf 'MONGODB_URI=%s\nMONGODB_DB=%s\n' "$$MONGODB_URI" "$${MONGODB_DB:-$(MONGODB_DB)}" | $(FLY) secrets import
+
+.PHONY: fly-deploy
+fly-deploy: ## Build the Dockerfile on Fly's builders and deploy it (one machine)
+	$(FLY) deploy --ha=false
+
+.PHONY: fly-token
+fly-token: ## Create a deploy token and save it as the FLY_API_TOKEN GitHub secret for CI
+	@if command -v gh >/dev/null; then \
+		fly tokens create deploy -a $(FLY_APP) -x 999999h | gh secret set FLY_API_TOKEN && echo "Saved FLY_API_TOKEN to GitHub."; \
+	else \
+		echo "gh isn't installed: add this as the FLY_API_TOKEN secret under GitHub > Settings > Secrets and variables > Actions."; \
+		fly tokens create deploy -a $(FLY_APP) -x 999999h; \
+	fi
+
+.PHONY: fly-status
+fly-status: ## Show the Fly app's machines and their state
+	$(FLY) status
+
+.PHONY: fly-logs
+fly-logs: ## Follow the Fly app's logs
+	$(FLY) logs
+
+.PHONY: fly-admin-code
+fly-admin-code: ## Show the one-time admin setup code from the Fly app's log
+	@code=$$($(FLY) logs --no-tail 2>&1 | grep "Admin setup code" | tail -1); \
+	if [ -n "$$code" ]; then echo "$$code"; \
+	else echo "No setup code in the recent log. Open /admin to generate one, then try again."; fi
+
+.PHONY: fly-admin-reset
+fly-admin-reset: ## Forgot the admin password on Fly? Remove it so it can be set up again
+	$(FLY) ssh console -C "/blog reset-admin"

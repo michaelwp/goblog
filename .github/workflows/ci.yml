@@ -6,7 +6,8 @@
 #
 # On pushes to main and on version tags (v1.2.3), the image is also
 # published to GitHub Container Registry as ghcr.io/<owner>/<repo>, ready for
-# any host to deploy.
+# any host to deploy. Pushes to main are also deployed to Fly.io (fly.toml);
+# that needs the FLY_API_TOKEN repository secret.
 name: CI
 
 on:
@@ -28,6 +29,7 @@ permissions:
 env:
   NODE_VERSION: "22"
   GOLANGCI_LINT_VERSION: v2.14.0 # keep in sync with the Makefile
+  FLY_APP: goblog # keep in sync with fly.toml
 
 jobs:
   lint:
@@ -123,6 +125,8 @@ jobs:
     env:
       # Publish on pushes to main and version tags; pull requests only build.
       PUBLISH: ${{ github.event_name != 'pull_request' }}
+      # Pushes to main also go to Fly's registry, for the deploy job.
+      DEPLOY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -136,11 +140,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Fly.io registry
+        if: env.DEPLOY == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: registry.fly.io
+          username: x
+          password: ${{ secrets.FLY_API_TOKEN }}
+
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: |
+            ghcr.io/${{ github.repository }}
+            registry.fly.io/${{ env.FLY_APP }},enable=${{ env.DEPLOY }}
           # main → :main and :latest; v1.2.3 → :1.2.3 and :1.2; every build → :sha-<commit>
           tags: |
             type=ref,event=branch
@@ -159,3 +173,23 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Fly.io
+    needs: [image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # One deploy at a time; a newer push waits rather than cancelling mid-rollout.
+    concurrency: deploy-fly
+    environment:
+      name: production
+      url: https://${{ env.FLY_APP }}.fly.dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Deploys the image the image job built and tested (tagged :sha-<commit>).
+      - run: flyctl deploy --ha=false --image registry.fly.io/${FLY_APP}:sha-${GITHUB_SHA::7}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

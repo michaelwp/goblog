@@ -10,7 +10,7 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - **Frontend:** React 19, rendered on the server inside Go by [goja](https://github.com/dop251/goja) and hydrated in the browser (`frontend/`)
 - **Editor:** [TipTap](https://tiptap.dev) visual editor; articles are stored as Markdown
 - **Database:** MongoDB for articles, profile, admin account and uploaded images
-- **Deployment:** the frontend is compiled into the binary with `embed.FS`, so no Node.js is needed at runtime. It runs locally or in [Apple `container`](https://github.com/apple/container).
+- **Deployment:** the frontend is compiled into the binary with `embed.FS`, so no Node.js is needed at runtime. It runs locally, in [Apple `container`](https://github.com/apple/container), or on [Fly.io](https://fly.io).
 
 ## Features
 
@@ -92,6 +92,12 @@ Run `make` to list every target.
 | `make check` | Lint and unit tests: what the pre-commit hook runs |
 | `make hooks` | Install the git pre-commit hook |
 | `make image` / `make clean` | Build only the container image / remove build output |
+| `make fly-setup` | Once: create the Fly.io app and send it `MONGODB_URI` and `MONGODB_DB` from `.env` |
+| `make fly-deploy` | Build on Fly's builders and deploy to Fly.io (one machine) |
+| `make fly-secrets` | Resend the MongoDB settings from `.env` to Fly (restarts the app) |
+| `make fly-token` | Create a Fly deploy token and save it as the `FLY_API_TOKEN` GitHub secret |
+| `make fly-status` / `make fly-logs` | The Fly app's machines / follow its logs |
+| `make fly-admin-code` / `make fly-admin-reset` | `admin-code` / `admin-reset`, for the app on Fly |
 
 ## Configuration
 
@@ -278,6 +284,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main`, every 
 | **Unit tests** | `make test-unit` |
 | **Integration tests** | `make test-integration` against a MongoDB 8 service container |
 | **Container image** | Builds the Dockerfile once the three jobs above pass |
+| **Deploy to Fly.io** | Pushes to `main` only: deploys that image to Fly.io |
 
 On pushes to `main` and on version tags, the image is also published to GitHub Container Registry as `ghcr.io/michaelwp/goblog`, tagged:
 - `latest` and `main` for `main`
@@ -288,7 +295,17 @@ Pull requests only build the image. A newer push to the same pull request cancel
 
 - **Releasing a version:** `git tag v1.0.0 && git push origin v1.0.0`.
 - **Image visibility:** the first publish creates a *private* package. To let a server pull it without logging in, make it public under the repository's **Packages → goblog → Package settings**.
-- **Deploying:** any host that runs container images can deploy `ghcr.io/michaelwp/goblog:latest` (or a version tag) with `MONGODB_URI` set. An automatic deploy job can be added once a host is chosen.
+- **Deploying:** every push to `main` that passes the checks is deployed to Fly.io (`fly.toml`). The image job also pushes the image to Fly's registry, and the deploy job runs `flyctl deploy` with that exact image, so Fly doesn't rebuild it. This needs the `FLY_API_TOKEN` repository secret (`make fly-token`). To deploy by hand, run `make fly-deploy`.
+
+### First deploy to Fly.io
+
+1. Install flyctl and log in: `brew install flyctl && fly auth login`. Add a card at fly.io/trial, or trial machines stop after 5 minutes.
+2. Point `MONGODB_URI` in `.env` at a hosted cluster (e.g. MongoDB Atlas), and allow `0.0.0.0/0` in Atlas → Network Access (Fly has no fixed outgoing IP).
+3. `make fly-setup`, then `make fly-deploy`. The site is at `https://<app>.fly.dev`.
+4. Open `/admin` and get the setup code with `make fly-admin-code`.
+5. `make fly-token` so CI can deploy pushes to `main`.
+
+Don't also turn on deploys from Fly's GitHub integration in the dashboard, or every push deploys twice.
 
 ## Code quality
 
