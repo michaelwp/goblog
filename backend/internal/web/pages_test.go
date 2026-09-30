@@ -196,11 +196,14 @@ func TestArticleShareLinksAndPreviewTags(t *testing.T) {
 		`href="https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2Fexample.com%2Fen%2Fposts%2Fhello-world"`,
 		`aria-label="Share on LinkedIn"`,
 		`<p class="page-subtitle">A subheading</p>`,                           // under the title
-		`<section class="article-summary" aria-labelledby="article-summary">`, // the summary, after the text
+		`<section class="article-summary" aria-labelledby="article-summary">`, // the summary, under the cover
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("article missing %q", want)
 		}
+	}
+	if cover, lead, text := strings.Index(body, `class="article-cover"`), strings.Index(body, `class="article-summary"`), strings.Index(body, `class="article-body"`); cover >= lead || lead >= text {
+		t.Error("the summary must come after the cover and before the article text")
 	}
 	if n := strings.Count(body, `<a href="/en"><span aria-hidden="true">← </span>Back to the main page</a>`); n != 2 {
 		t.Errorf("%d links back to the main page, want 2 (top and bottom)", n)

@@ -162,6 +162,15 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
           <img src={post.cover} alt="" />
         </figure>
       )}
+      {/* The summary introduces the article, under the cover (or the share buttons without one). */}
+      {post.summary && (
+        <section className="article-summary" aria-labelledby="article-summary">
+          <h2 id="article-summary" className="side-heading">
+            {t.summaryHeading}
+          </h2>
+          <p>{post.summary}</p>
+        </section>
+      )}
 
       <div className="article">
         <div className="article-body">
@@ -169,15 +178,6 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
           {contents && <div className="toc-inline">{contents}</div>}
 
           {blocks.map((b, i) => renderBlock(b, i))}
-
-          {post.summary && (
-            <section className="article-summary" aria-labelledby="article-summary">
-              <h2 id="article-summary" className="side-heading">
-                {t.summaryHeading}
-              </h2>
-              <p>{post.summary}</p>
-            </section>
-          )}
 
           {!!post.tags?.length && (
             <footer className="article-tags">

@@ -454,9 +454,10 @@ a:hover {
   line-height: 1.45;
   color: var(--text-muted);
 }
-/* The article's summary, in a box after the text. */
+/* The article's summary, in a box under the cover. */
 .article-summary {
-  margin-top: 2.5rem;
+  max-width: var(--measure);
+  margin: 1.5rem 0 0;
   padding: 1.1rem 1.25rem;
   border-left: 3px solid var(--accent);
   border-radius: 0 calc(var(--radius) + 4px) calc(var(--radius) + 4px) 0;
@@ -465,8 +466,9 @@ a:hover {
 .article-summary .side-heading {
   margin-bottom: 0.4rem;
 }
-.article-body .article-summary p {
+.article-summary p {
   margin: 0;
+  line-height: 1.7;
 }
 .article-body .back-link a {
   text-decoration: none; /* like the one above the title, not an in-text link */

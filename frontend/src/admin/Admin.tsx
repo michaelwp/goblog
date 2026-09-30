@@ -752,7 +752,7 @@ export function AdminEdit(props: Page<"adminEdit">) {
           label="Summary (optional)"
           name="summary"
           error={errors.summary}
-          hint="One or two sentences shown at the end of the article, on the main page, in search results, and to search engines and social media."
+          hint="One or two sentences that introduce the article: shown under the cover image, on the main page, in search results, and to search engines and social media."
         >
           <textarea name="summary" defaultValue={form.summary} rows={2} maxLength={300} />
         </Field>
