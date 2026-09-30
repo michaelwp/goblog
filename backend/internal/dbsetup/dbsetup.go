@@ -112,6 +112,7 @@ func schemas(languages []string) []collection {
 				"slug":        bson.M{"bsonType": "string", "minLength": 1},
 				"lang":        bson.M{"bsonType": "string", "enum": languages},
 				"title":       typ("string"),
+				"subtitle":    typ("string"), // optional
 				"summary":     typ("string"),
 				"body":        typ("string"),
 				"publishedAt": typ("date"),
@@ -121,6 +122,7 @@ func schemas(languages []string) []collection {
 				"cover":       typ("string"), // optional
 				"draft": bson.M{"bsonType": []string{"object", "null"}, "properties": bson.M{
 					"title":       typ("string"),
+					"subtitle":    typ("string"),
 					"summary":     typ("string"),
 					"body":        typ("string"),
 					"publishedAt": typ("date"),

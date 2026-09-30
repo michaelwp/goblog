@@ -241,6 +241,7 @@ func (s *MongoStore) Update(ctx context.Context, p Post) error {
 		bson.D{{Key: "slug", Value: p.Slug}, {Key: "lang", Value: p.Lang}},
 		bson.D{{Key: "$set", Value: bson.D{
 			{Key: "title", Value: p.Title},
+			{Key: "subtitle", Value: p.Subtitle},
 			{Key: "summary", Value: p.Summary},
 			{Key: "body", Value: p.Body},
 			{Key: "publishedAt", Value: p.PublishedAt},

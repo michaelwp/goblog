@@ -154,9 +154,8 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
         </div>
       )}
       <BackToMain lang={lang} t={t} />
-      <TitleBar t={t} title={post.title} tab={t.article} />
+      <TitleBar t={t} title={post.title} subtitle={post.subtitle} tab={t.article} />
       <p className="from-site">{t.fromSite}</p>
-      {post.summary && <p className="article-lead">{post.summary}</p>}
       {!preview && <ShareBar url={url} title={post.title} t={t} className="share-top" />}
       {post.cover && (
         <figure className="article-cover">
@@ -170,6 +169,15 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
           {contents && <div className="toc-inline">{contents}</div>}
 
           {blocks.map((b, i) => renderBlock(b, i))}
+
+          {post.summary && (
+            <section className="article-summary" aria-labelledby="article-summary">
+              <h2 id="article-summary" className="side-heading">
+                {t.summaryHeading}
+              </h2>
+              <p>{post.summary}</p>
+            </section>
+          )}
 
           {!!post.tags?.length && (
             <footer className="article-tags">

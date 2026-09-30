@@ -385,3 +385,42 @@ func TestAdminPagesLoadAdminBundle(t *testing.T) {
 		t.Error("editor fallback textarea missing from server-rendered page")
 	}
 }
+
+// Starting a translation must offer the real language switcher, so switching
+// back opens the existing translation instead of relabelling the empty form
+// as a second article in that language.
+func TestNewTranslationHasLanguageSwitcher(t *testing.T) {
+	app, store := newAdminApp(t, testPassword)
+	session := login(t, app)
+
+	res := send(t, app, "GET", "/admin/new?slug=why-ssr&lang=id&from=en", nil, session) // why-ssr is English only
+	if res.code != 200 {
+		t.Fatalf("status %d", res.code)
+	}
+	if strings.Contains(res.body, `<select name="lang"`) {
+		t.Error("a new translation offers the plain language picker, which can't switch back")
+	}
+	for _, want := range []string{
+		`aria-describedby="lang-switch-hint"`,           // the switcher
+		`<input type="hidden" name="lang" value="id"/>`, // still posts its language
+	} {
+		if !strings.Contains(res.body, want) {
+			t.Errorf("new translation page missing %q", want)
+		}
+	}
+
+	if slug := regexp.MustCompile(`<input[^>]*name="slug"[^>]*>`).FindString(res.body); !strings.Contains(slug, `readOnly=""`) {
+		t.Errorf("the slug of a new translation is editable (%s); translations share it", slug)
+	}
+
+	// Saving it still creates the Indonesian translation.
+	res = send(t, app, "POST", "/admin/new", url.Values{
+		"slug": {"why-ssr"}, "lang": {"id"}, "title": {"Mengapa SSR"}, "date": {"2026-09-30"}, "action": {"draft"},
+	}, session)
+	if res.code != 303 {
+		t.Fatalf("save: status %d: %s", res.code, res.body)
+	}
+	if p, err := store.Get(t.Context(), "why-ssr", "id"); err != nil || p.Title != "Mengapa SSR" {
+		t.Errorf("id translation = %+v, %v", p, err)
+	}
+}

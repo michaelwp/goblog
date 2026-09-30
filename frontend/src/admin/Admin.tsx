@@ -523,6 +523,9 @@ export function AdminEdit(props: Page<"adminEdit">) {
   // A new article becomes an existing draft when autosave first creates it.
   const [created, setCreated] = useState<{ slug: string; lang: string } | null>(null);
   const isNew = mode === "new" && !created;
+  // Starting a new translation of an existing article (?slug=&lang=): its
+  // other languages exist, so the Language field switches between them.
+  const isTranslation = isNew && Object.keys(translations).length > 0;
   const slug = created?.slug ?? form.slug;
   const articleLang = created?.lang ?? form.lang;
   const base = `/admin/posts/${slug}/${articleLang}`;
@@ -670,10 +673,21 @@ export function AdminEdit(props: Page<"adminEdit">) {
       <form ref={formRef} className="admin-card admin-form" method="post" action={action} noValidate>
         {actions("top")}
         <div className="field-row">
-          <Field label="Slug" name="slug" error={errors.slug} hint={isNew ? "Used in the URL, e.g. my-first-post. Translations share a slug." : "The slug can't be changed."}>
-            <input name="slug" defaultValue={slug} readOnly={!isNew} required pattern="[a-z0-9]+(-[a-z0-9]+)*" autoComplete="off" />
+          <Field
+            label="Slug"
+            name="slug"
+            error={errors.slug}
+            hint={
+              isTranslation
+                ? "Translations share the slug of the article."
+                : isNew
+                  ? "Used in the URL, e.g. my-first-post. Translations share a slug."
+                  : "The slug can't be changed."
+            }
+          >
+            <input name="slug" defaultValue={slug} readOnly={!isNew || isTranslation} required pattern="[a-z0-9]+(-[a-z0-9]+)*" autoComplete="off" />
           </Field>
-          {isNew ? (
+          {isNew && !isTranslation ? (
             <Field label="Language" name="lang" error={errors.lang}>
               <select name="lang" defaultValue={articleLang}>
                 {languages.map((l) => (
@@ -684,14 +698,18 @@ export function AdminEdit(props: Page<"adminEdit">) {
               </select>
             </Field>
           ) : (
-            <LanguageSwitcher
-              slug={slug}
-              current={articleLang}
-              languages={languages}
-              translations={{ ...translations, [articleLang]: translations[articleLang as Locale] ?? current }}
-              saveNow={saveNow}
-              allowLeave={allowLeave}
-            />
+            <>
+              {/* The switcher navigates rather than posting; a new translation still sends its language. */}
+              {isNew && <input type="hidden" name="lang" value={articleLang} />}
+              <LanguageSwitcher
+                slug={slug}
+                current={articleLang}
+                languages={languages}
+                translations={{ ...translations, [articleLang]: translations[articleLang as Locale] ?? current }}
+                saveNow={saveNow}
+                allowLeave={allowLeave}
+              />
+            </>
           )}
           <Field label="Publish date" name="date" error={errors.date}>
             <input type="date" name="date" defaultValue={form.date} required />
@@ -726,7 +744,16 @@ export function AdminEdit(props: Page<"adminEdit">) {
           <input name="title" defaultValue={form.title} required maxLength={200} />
         </Field>
 
-        <Field label="Summary" name="summary" error={errors.summary} hint="One or two sentences shown on the main page, in search results and to search engines.">
+        <Field label="Subheading (optional)" name="subtitle" error={errors.subtitle} hint="A short line shown under the title.">
+          <input name="subtitle" defaultValue={form.subtitle} maxLength={200} />
+        </Field>
+
+        <Field
+          label="Summary (optional)"
+          name="summary"
+          error={errors.summary}
+          hint="One or two sentences shown at the end of the article, on the main page, in search results, and to search engines and social media."
+        >
           <textarea name="summary" defaultValue={form.summary} rows={2} maxLength={300} />
         </Field>
 

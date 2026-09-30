@@ -57,12 +57,13 @@ type adminEditPage struct {
 }
 
 type adminForm struct {
-	Slug    string `json:"slug"`
-	Lang    string `json:"lang"`
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
-	Body    string `json:"body"`
-	Date    string `json:"date"` // YYYY-MM-DD
+	Slug     string `json:"slug"`
+	Lang     string `json:"lang"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle"` // optional line under the title
+	Summary  string `json:"summary"`
+	Body     string `json:"body"`
+	Date     string `json:"date"` // YYYY-MM-DD
 	// Article-wide: saved to every translation.
 	Category string `json:"category"`
 	Tags     string `json:"tags"`  // comma-separated
@@ -458,7 +459,7 @@ func (h *pages) adminEditForm(c *fiber.Ctx) error {
 	st := editState{
 		mode: "edit", status: p.Status, notice: notice,
 		form: adminForm{
-			Slug: e.Slug, Lang: e.Lang, Title: e.Title, Summary: e.Summary, Body: e.Body,
+			Slug: e.Slug, Lang: e.Lang, Title: e.Title, Subtitle: e.Subtitle, Summary: e.Summary, Body: e.Body,
 			Date:     e.PublishedAt.UTC().Format(dateLayout),
 			Category: e.Category, Tags: strings.Join(e.Tags, ", "), Cover: e.Cover,
 		},
@@ -499,7 +500,7 @@ func (h *pages) saveEdit(ctx context.Context, existing posts.Post, form adminFor
 	// Category, tags and cover describe the whole article; they apply right away.
 	existing.Category, existing.Tags, existing.Cover = p.Category, p.Tags, p.Cover
 	existing.Draft = &posts.Revision{
-		Title: p.Title, Summary: p.Summary, Body: p.Body, PublishedAt: p.PublishedAt, SavedAt: time.Now().UTC(),
+		Title: p.Title, Subtitle: p.Subtitle, Summary: p.Summary, Body: p.Body, PublishedAt: p.PublishedAt, SavedAt: time.Now().UTC(),
 	}
 	return existing, nil
 }
@@ -572,7 +573,7 @@ func (h *pages) adminDiscard(c *fiber.Ctx) error {
 
 func autosaveError(c *fiber.Ctx, status int, errs map[string]string) error {
 	msg := "Autosave paused: fix the highlighted fields."
-	for _, key := range []string{"slug", "lang", "title", "date", "summary", "cover", "body"} {
+	for _, key := range []string{"slug", "lang", "title", "subtitle", "date", "summary", "cover", "body"} {
 		if m, ok := errs[key]; ok {
 			msg = "Autosave paused: " + m
 			break
@@ -714,10 +715,11 @@ func readForm(c *fiber.Ctx) adminForm {
 	// request, so copy them before they can end up stored anywhere.
 	v := func(key string) string { return strings.TrimSpace(strings.Clone(c.FormValue(key))) }
 	return adminForm{
-		Slug:    strings.ToLower(v("slug")),
-		Lang:    v("lang"),
-		Title:   v("title"),
-		Summary: v("summary"),
+		Slug:     strings.ToLower(v("slug")),
+		Lang:     v("lang"),
+		Title:    v("title"),
+		Subtitle: v("subtitle"),
+		Summary:  v("summary"),
 		// Normalize Windows line endings from textareas so "\n\n" splits paragraphs.
 		Body:     strings.ReplaceAll(v("body"), "\r\n", "\n"),
 		Date:     v("date"),
@@ -748,6 +750,9 @@ func (h *pages) validate(ctx context.Context, f adminForm, mode string, status p
 	case n > 200:
 		errs["title"] = "Keep the title under 200 characters."
 	}
+	if utf8.RuneCountInString(f.Subtitle) > 200 {
+		errs["subtitle"] = "Keep the subheading under 200 characters."
+	}
 	if utf8.RuneCountInString(f.Summary) > 300 {
 		errs["summary"] = "Keep the summary under 300 characters."
 	}
@@ -773,7 +778,7 @@ func (h *pages) validate(ctx context.Context, f adminForm, mode string, status p
 		}
 	}
 	return posts.Post{
-		Slug: f.Slug, Lang: f.Lang, Title: f.Title, Summary: f.Summary, Body: f.Body, PublishedAt: date, Status: status,
+		Slug: f.Slug, Lang: f.Lang, Title: f.Title, Subtitle: f.Subtitle, Summary: f.Summary, Body: f.Body, PublishedAt: date, Status: status,
 		Category: f.Category, Tags: tags, Cover: f.Cover,
 	}, errs
 }

@@ -174,6 +174,7 @@ func TestArticleShareLinksAndPreviewTags(t *testing.T) {
 	for i := range seed {
 		if seed[i].Slug == "hello-world" {
 			seed[i].Cover = "/media/0123456789abcdef01234567.png"
+			seed[i].Subtitle = "A subheading"
 		}
 	}
 	app := newApp(t, seed)
@@ -194,7 +195,8 @@ func TestArticleShareLinksAndPreviewTags(t *testing.T) {
 		`<div class="share" role="group" aria-label="Share this article">`,           // and below it
 		`href="https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2Fexample.com%2Fen%2Fposts%2Fhello-world"`,
 		`aria-label="Share on LinkedIn"`,
-		`<p class="article-lead">`, // the summary, under the title
+		`<p class="page-subtitle">A subheading</p>`,                           // under the title
+		`<section class="article-summary" aria-labelledby="article-summary">`, // the summary, after the text
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("article missing %q", want)
@@ -213,8 +215,8 @@ func TestArticleShareLinksAndPreviewTags(t *testing.T) {
 		if want := `<meta property="og:image" content="http://example.com/share.png">`; !strings.Contains(body, want) {
 			t.Errorf("%s missing %q", path, want)
 		}
-		if strings.Contains(body, `class="article-cover"`) {
-			t.Errorf("%s shows a cover it doesn't have", path)
+		if strings.Contains(body, `class="article-cover"`) || strings.Contains(body, `class="page-subtitle"`) {
+			t.Errorf("%s shows a cover or subheading it doesn't have", path)
 		}
 	}
 	if !strings.Contains(body, `<meta property="og:type" content="website">`) {

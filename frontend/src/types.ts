@@ -5,6 +5,7 @@ export type Post = {
   slug: string;
   lang: Locale;
   title: string;
+  subtitle?: string; // optional line under the title
   summary: string;
   body: string;
   publishedAt: string;
@@ -13,7 +14,7 @@ export type Post = {
   tags: string[] | null;
   cover?: string; // optional cover image (shared by all translations); also the link-preview picture
   // Unpublished edits to a published article (admin pages only).
-  draft?: { title: string; summary: string; body: string; publishedAt: string; savedAt: string } | null;
+  draft?: { title: string; subtitle?: string; summary: string; body: string; publishedAt: string; savedAt: string } | null;
 };
 
 export type PostStatus = "draft" | "published" | "disabled";
@@ -144,6 +145,7 @@ export type AdminForm = {
   slug: string;
   lang: string;
   title: string;
+  subtitle: string; // optional line under the title
   summary: string;
   body: string;
   date: string; // YYYY-MM-DD

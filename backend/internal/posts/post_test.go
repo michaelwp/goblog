@@ -26,9 +26,10 @@ func TestApplyDraftAndEditing(t *testing.T) {
 		t.Error("ApplyDraft without draft changed the post")
 	}
 
-	live.Draft = &Revision{Title: "New", Summary: "S2", Body: "B2", PublishedAt: time.Unix(2, 0)}
+	live.Subtitle = "Old subheading"
+	live.Draft = &Revision{Title: "New", Subtitle: "New subheading", Summary: "S2", Body: "B2", PublishedAt: time.Unix(2, 0)}
 	e := live.Editing()
-	if e.Title != "New" || e.Body != "B2" || !e.PublishedAt.Equal(time.Unix(2, 0)) || e.Draft != nil {
+	if e.Title != "New" || e.Subtitle != "New subheading" || e.Body != "B2" || !e.PublishedAt.Equal(time.Unix(2, 0)) || e.Draft != nil {
 		t.Errorf("Editing = %+v", e)
 	}
 	if e.Status != Published || e.Category != "go" || len(e.Tags) != 1 {

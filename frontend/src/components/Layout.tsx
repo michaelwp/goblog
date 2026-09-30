@@ -97,8 +97,8 @@ export type Translation = { lang: Locale; href: string };
 
 // The page heading: title, then the tab strip underneath, modelled on
 // Wikipedia's article header. The language menu lives in the site header.
-export function TitleBar(props: { t: Dictionary; title: string; tab: string }) {
-  const { t, title, tab } = props;
+export function TitleBar(props: { t: Dictionary; title: string; subtitle?: string; tab: string }) {
+  const { t, title, subtitle, tab } = props;
   return (
     <div className="title-bar">
       <div className="title-row">
@@ -106,6 +106,7 @@ export function TitleBar(props: { t: Dictionary; title: string; tab: string }) {
           {title}
         </h1>
       </div>
+      {subtitle && <p className="page-subtitle">{subtitle}</p>}
       <div className="tabs">
         <span className="tab is-selected">{tab}</span>
         <span className="tab is-selected">{t.read}</span>

@@ -445,14 +445,31 @@ a:hover {
 .back-link a:hover {
   color: var(--accent);
 }
-/* The article's summary, as an intro under the title. */
-.article-lead {
+/* The optional subheading, between the title and the tabs. */
+.page-subtitle {
   max-width: var(--measure);
-  margin: 1.25rem 0 0;
+  margin: 0.6rem 0 0;
   font-family: var(--font-serif);
-  font-size: 1.2rem;
-  line-height: 1.55;
+  font-size: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
+  line-height: 1.45;
   color: var(--text-muted);
+}
+/* The article's summary, in a box after the text. */
+.article-summary {
+  margin-top: 2.5rem;
+  padding: 1.1rem 1.25rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 calc(var(--radius) + 4px) calc(var(--radius) + 4px) 0;
+  background: var(--surface);
+}
+.article-summary .side-heading {
+  margin-bottom: 0.4rem;
+}
+.article-body .article-summary p {
+  margin: 0;
+}
+.article-body .back-link a {
+  text-decoration: none; /* like the one above the title, not an in-text link */
 }
 /* At the end of an article, after the share buttons. */
 .back-link.back-link-end {

@@ -21,6 +21,7 @@ type Post struct {
 	Slug        string    `json:"slug" bson:"slug"`
 	Lang        string    `json:"lang" bson:"lang"`
 	Title       string    `json:"title" bson:"title"`
+	Subtitle    string    `json:"subtitle" bson:"subtitle,omitempty"` // optional line under the title
 	Summary     string    `json:"summary" bson:"summary"`
 	Body        string    `json:"body" bson:"body"`
 	PublishedAt time.Time `json:"publishedAt" bson:"publishedAt"`
@@ -42,6 +43,7 @@ type Post struct {
 // Revision is a pending edit of a published post.
 type Revision struct {
 	Title       string    `json:"title" bson:"title"`
+	Subtitle    string    `json:"subtitle" bson:"subtitle,omitempty"`
 	Summary     string    `json:"summary" bson:"summary"`
 	Body        string    `json:"body" bson:"body"`
 	PublishedAt time.Time `json:"publishedAt" bson:"publishedAt"`
@@ -53,7 +55,7 @@ func (p *Post) ApplyDraft() {
 	if p.Draft == nil {
 		return
 	}
-	p.Title, p.Summary, p.Body, p.PublishedAt = p.Draft.Title, p.Draft.Summary, p.Draft.Body, p.Draft.PublishedAt
+	p.Title, p.Subtitle, p.Summary, p.Body, p.PublishedAt = p.Draft.Title, p.Draft.Subtitle, p.Draft.Summary, p.Draft.Body, p.Draft.PublishedAt
 	p.Draft = nil
 }
 
@@ -104,7 +106,7 @@ type Repository interface {
 	All(ctx context.Context) ([]Post, error)
 	// Create adds p, or returns ErrExists if its slug and language are taken.
 	Create(ctx context.Context, p Post) error
-	// Update replaces the title, summary, body, publish date, status and
+	// Update replaces the title, subtitle, summary, body, publish date, status and
 	// pending draft of the post with p's slug and language, or returns ErrNotFound.
 	Update(ctx context.Context, p Post) error
 	// Delete removes one translation, or returns ErrNotFound.
