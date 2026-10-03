@@ -8,6 +8,7 @@ import { queryString } from "../lib/query";
 import { useHydrated } from "../lib/useHydrated";
 import { getDictionary, type Locale } from "../lib/i18n";
 import type { AdminForm, BulkResult, BulkVerb, PageData, Post, PostStatus } from "../types";
+import { addPasskey, passkeysSupported, signInWithPasskey, suggestPasskeyName } from "./passkey";
 import { PasswordFields } from "./PasswordField";
 import { ImageField, PhotoField } from "./PhotoField";
 import { RichEditor } from "./RichEditor";
@@ -60,15 +61,43 @@ function AdminLayout(props: { children: ReactNode; signedIn?: boolean; section?:
 // ---- Login -------------------------------------------------------------
 
 export function AdminLogin({ error }: Page<"adminLogin">) {
+  const hydrated = useHydrated();
+  const [passkeyError, setPasskeyError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const message = passkeyError || error;
+
+  async function passkeySignIn() {
+    setBusy(true);
+    setPasskeyError("");
+    try {
+      window.location.assign(await signInWithPasskey());
+    } catch (e) {
+      setPasskeyError(e instanceof Error ? e.message : "Passkey sign-in failed.");
+      setBusy(false);
+    }
+  }
+
   return (
     <AdminLayout signedIn={false}>
       <form className="admin-card admin-login" method="post" action="/admin/login">
         <h1>Sign in</h1>
-        <p className="admin-muted">Enter the admin password to manage articles.</p>
-        {error && (
+        <p className="admin-muted">Use your passkey, or enter the admin password to manage articles.</p>
+        {message && (
           <p className="admin-alert admin-alert-error" role="alert">
-            {error}
+            {message}
           </p>
+        )}
+        {/* Passkeys need JavaScript and a supporting browser; the password always works. */}
+        {hydrated && passkeysSupported() && (
+          <>
+            <button type="button" className="btn btn-secondary btn-block passkey-button" onClick={() => void passkeySignIn()} disabled={busy}>
+              <PasskeyIcon />
+              {busy ? "Waiting for your passkey…" : "Sign in with a passkey"}
+            </button>
+            <p className="login-divider">
+              <span>or use your password</span>
+            </p>
+          </>
         )}
         <label className="field">
           <span className="field-label">Password</span>
@@ -113,20 +142,28 @@ export function AdminSetup({ error }: Page<"adminSetup">) {
 
 // ---- Change password -------------------------------------------------
 
-export function AdminPassword({ errors, notice }: Page<"adminPassword">) {
+const PASSWORD_NOTICES = {
+  saved: "Password changed. Other sessions have been signed out.",
+  "passkey-added": "Passkey added. You can now sign in with it instead of the password.",
+  "passkey-removed": "Passkey removed.",
+};
+
+export function AdminPassword({ errors, notice, passkeys }: Page<"adminPassword">) {
   return (
     <AdminLayout section="password">
       <div className="admin-toolbar">
         <div>
-          <h1>Password</h1>
-          <p className="admin-muted">Changing it signs you out everywhere else.</p>
+          <h1>Password &amp; passkeys</h1>
+          <p className="admin-muted">Sign in with a passkey, or with the password. Changing the password signs you out everywhere else.</p>
         </div>
       </div>
-      {notice === "saved" && (
+      {notice && (
         <p className="admin-alert admin-alert-success" role="status">
-          Password changed. Other sessions have been signed out.
+          {PASSWORD_NOTICES[notice]}
         </p>
       )}
+      <Passkeys passkeys={passkeys} />
+      <h2 className="admin-section-title">Change password</h2>
       <form className="admin-card admin-form admin-narrow" method="post" action="/admin/password">
         <Field label="Current password" name="current" error={errors.current}>
           <input type="password" name="current" autoComplete="current-password" required />
@@ -139,6 +176,99 @@ export function AdminPassword({ errors, notice }: Page<"adminPassword">) {
         </div>
       </form>
     </AdminLayout>
+  );
+}
+
+// ---- Passkeys ------------------------------------------------------------
+
+function PasskeyIcon() {
+  return (
+    <svg className="passkey-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="7" r="4" />
+      <path d="M2 21v-1.5A5.5 5.5 0 0 1 7.5 14h3" />
+      <circle cx="17.5" cy="13.5" r="2.5" />
+      <path d="M17.5 16v5l1.5-1.2M17.5 18.5l1.5-1" />
+    </svg>
+  );
+}
+
+// The admin's passkeys: listed with when they were last used, and added from
+// this device with the browser's passkey prompt.
+function Passkeys({ passkeys }: { passkeys: Page<"adminPassword">["passkeys"] }) {
+  const hydrated = useHydrated();
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const when = (iso: string) => (hydrated && iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : iso.slice(0, 10));
+
+  async function add(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await addPasskey(name.trim() || suggestPasskeyName());
+      window.location.assign("/admin/password?notice=passkey-added");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Adding the passkey failed.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="admin-card admin-narrow passkeys" aria-labelledby="passkeys-title">
+      <h2 id="passkeys-title">Passkeys</h2>
+      <p className="admin-muted">
+        Sign in with your fingerprint, face or device PIN instead of typing the password. A passkey stays on your device (or syncs with your
+        Apple, Google or password-manager account) and only works on this site.
+      </p>
+      {passkeys.length > 0 ? (
+        <ul className="passkey-list">
+          {passkeys.map((p) => (
+            <li key={p.id}>
+              <PasskeyIcon />
+              <div className="passkey-info">
+                <strong>{p.name}</strong>
+                <span className="admin-muted">
+                  Added {when(p.createdAt)} · {p.lastUsedAt ? `Last used ${when(p.lastUsedAt)}` : "Not used yet"}
+                </span>
+              </div>
+              <form
+                method="post"
+                action={`/admin/passkeys/${p.id}/delete`}
+                onSubmit={(e) => {
+                  if (!window.confirm(`Remove the passkey "${p.name}"? You won't be able to sign in with it any more.`)) e.preventDefault();
+                }}
+              >
+                <button type="submit" className="btn btn-quiet btn-sm">
+                  Remove
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="passkey-empty">No passkeys yet.</p>
+      )}
+      {error && (
+        <p className="admin-alert admin-alert-error" role="alert">
+          {error}
+        </p>
+      )}
+      {hydrated &&
+        (passkeysSupported() ? (
+          <form className="passkey-add" onSubmit={(e) => void add(e)}>
+            <label className="field">
+              <span className="field-label">Name (optional)</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggestPasskeyName()} maxLength={60} />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? "Follow your browser's prompt…" : "Add a passkey on this device"}
+            </button>
+          </form>
+        ) : (
+          <p className="admin-muted">This browser doesn&apos;t support passkeys. Try a recent Safari, Chrome, Edge or Firefox.</p>
+        ))}
+    </section>
   );
 }
 

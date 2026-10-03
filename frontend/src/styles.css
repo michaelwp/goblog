@@ -1304,6 +1304,92 @@ mark {
   font-size: 0.85em;
 }
 
+/* Passkeys: the sign-in button, and the list on the Password page. */
+.passkey-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.passkey-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+.passkeys {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.passkeys h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+}
+.passkeys > .admin-muted {
+  margin: 0;
+}
+.passkey-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.passkey-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+}
+.passkey-list li + li {
+  border-top: 1px solid var(--line);
+}
+.passkey-list .passkey-icon {
+  color: var(--text-muted);
+}
+.passkey-info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.passkey-info .admin-muted {
+  font-size: 0.8rem;
+}
+.passkey-empty {
+  margin: 0;
+  color: var(--text-faint);
+}
+.passkey-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.passkey-add .field {
+  flex: 1;
+  min-width: 12rem;
+}
+.passkey-add + .admin-section-title,
+.passkeys + .admin-section-title {
+  margin-bottom: 0.75rem;
+}
+
 /* ==== Password strength ============================================ */
 
 .pw-input {

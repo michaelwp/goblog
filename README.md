@@ -18,11 +18,12 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 
 - English and Indonesian editions. `/` redirects by browser language, and every page links to its translation.
 - A Wikipedia-inspired layout with a modern look: Contents sidebar, infobox, featured article, articles grouped by category, and an About page.
+- Article pages with an optional subheading under the title, an optional cover image, the summary in a box above the text, and links back to the main page at the top and bottom.
 - Categories and tags: every category and tag has its own page, and search can combine words, a category and a tag.
 - Sharing: round logo buttons above and below each article (X, Facebook, LinkedIn, WhatsApp, Telegram, email, copy link, and the phone's share sheet), and Open Graph tags so shared links show a title, summary and picture. No third-party scripts.
-- Cover images: an optional cover per article, uploaded in the editor and shared by its translations. It's shown above the article and is the picture in link previews; articles without one use the blog's logo (`/share.png`, embedded from `backend/internal/web/share.png`).
+- Link previews: the article's cover is the picture when it's shared; articles without one (and other pages) use the blog's logo (`/share.png`, embedded from `backend/internal/web/share.png`).
 - Related articles: under the infobox, up to five articles sharing the most tags or the category.
-- Light, dark or automatic appearance, remembered without a flash on load.
+- A language menu and the Appearance menu (light, dark or automatic, remembered without a flash on load) in the top bar.
 - Fast, crawlable pages: complete HTML from the server, `hreflang` alternates, and a small script (`app.js`) for interactivity.
 
 **For the author** (`/admin`)
@@ -32,20 +33,21 @@ GoBlog.dev is a bilingual blog that ships as a single Go binary. That binary ser
 - Safe edits to live articles: changes stay in a draft copy until you click **Publish changes**.
 - Autosave every minute, with a warning before leaving unsaved work.
 - A language switcher in the editor to move between translations or start a missing one.
+- Per article: an optional subheading and summary (written per language), and an optional cover image (shared by all translations).
 - Categories (managed in the admin, named in both languages) and free-form tags.
 - Profile for the About page, with photo upload and a country flag.
-- Password-protected, with a one-time setup code, strong-password rules and rate-limited logins.
+- Sign in with a passkey (Touch ID, Face ID, Windows Hello or a security key) or the password; a one-time setup code, strong-password rules and rate-limited logins protect the account.
 
 **For developers**
 
 - One command each to run, test, lint and deploy (`make`).
 - Unit tests for both halves (`go test`, `node:test`), plus MongoDB integration tests.
 - Standard lint rules for Go (golangci-lint) and React/TypeScript (ESLint), enforced by a git pre-commit hook.
-- GitHub Actions CI on every push and pull request, publishing a container image to GitHub Container Registry.
+- GitHub Actions CI on every push and pull request, publishing a container image to GitHub Container Registry, and deploying version tags to Fly.io.
 
 ## Quick start
 
-Requires macOS with [Apple `container`](https://github.com/apple/container) for the container workflow. Running the app directly on your Mac, testing and linting also need Go 1.26+ and Node 20+.
+Requires macOS with [Apple `container`](https://github.com/apple/container) for the container workflow. Running the app directly on your Mac, testing and linting also need Go 1.26+ and Node 22+.
 
 **Everything in containers:**
 
@@ -119,7 +121,7 @@ No secrets go in `.env`: the admin password is stored, hashed, in MongoDB.
 
 ## Using the admin
 
-Sign in at `/admin`. The top bar has **Articles**, **Categories**, **Profile**, **Password**, **View site** and **Log out**.
+Sign in at `/admin` with a passkey or the password. The top bar has **Articles**, **Categories**, **Profile**, **Password**, **View site** and **Log out**.
 
 ### Articles
 
@@ -142,6 +144,20 @@ The buttons appear both above and below the form. Pressing Enter always takes th
 - **Several articles at once:** tick articles (or **Select all**) and use the bar that appears to **Publish**, **Disable**, **Move to drafts** or **Delete**. Each row's **⋯** menu does the same for one article. These actions cover every translation of an article. Publishing skips empty drafts and says how many, and Disable and Delete ask for confirmation.
 - **Deleting:** remove one translation, or the whole article in every language, from the editor's danger zone or the list.
 - **The slug can't be changed** after an article is created: it's the article's address and what links its translations together.
+
+**Article fields:**
+
+| Field | Required? | Written | Shown |
+| --- | --- | --- | --- |
+| **Slug**, **Language**, **Publish date** | Yes | Slug shared by all translations | The article's address, the infobox |
+| **Category**, **Tags** | No | Shared by all translations | Infobox, category and tag pages, related articles |
+| **Title** | Yes (up to 200 characters) | Per language | Page heading, lists, browser tab, link previews |
+| **Subheading** | No (up to 200; about 120 fits two lines) | Per language | A line under the title |
+| **Summary** | No (up to 300) | Per language | A box above the article text, on the main page and in search results, and as the description for search engines and link previews |
+| **Cover image** | No | Shared by all translations | Above the summary, and as the picture in link previews (otherwise the blog's logo). A wide image (1200×630) works best. |
+| **Body** | Only to publish | Per language | The article |
+
+The subheading, summary and body go through the draft copy of a live article like the title; the category, tags and cover apply as soon as you save.
 
 ### Categories and tags
 
@@ -172,20 +188,22 @@ Articles and profile bios are stored as Markdown:
 
 Limits: no underline (Markdown can't store it), no nested lists (nested items are kept as normal items), and no line breaks inside a paragraph (Enter starts a new one). Opening and saving an article without editing it leaves its Markdown unchanged.
 
-### Profile and password
+### Profile, password and passkeys
 
 - **Profile** fills the About page. Name, photo, location, country, email and links are shared between languages; the headline and bio are written per language. If one language has no text, the page shows the other with a note.
   - **Photo:** click **Upload photo**. Share-page links (Google Drive, Google Photos, Dropbox) are refused, because they open a web page rather than the image.
   - **Country:** shown as a flag emoji before the location. Windows has no flag emoji and shows the two-letter code instead.
   - **Links:** one per line as `Label | https://…`, up to 10.
-- **Password:** changing it signs out every other session. If you forget it, run `make admin-reset` (or `cd backend && go run ./cmd/server reset-admin` when running locally), then set a new one at `/admin`.
+- **Password:** changing it signs out every other session. If you forget it, run `make admin-reset` (or `cd backend && go run ./cmd/server reset-admin` when running locally), then set a new one at `/admin`. Resetting also removes your passkeys.
+- **Passkeys:** under **Password**, click **Add a passkey on this device** and confirm with your fingerprint, face or device PIN. Then use **Sign in with a passkey** on the login page; no password needed. Add one per device (or let iCloud Keychain, Google Password Manager or your password manager sync it), and remove any you no longer use. The password keeps working as a fallback. A passkey belongs to the address it was created on: one added on `localhost` doesn't work on `goblog.fly.dev`, and the reverse, so add them on the live site.
 
 ### Security
 
 - The password is stored as a bcrypt hash in the `admin` collection, next to the key that signs session cookies.
 - Sessions last 12 hours in an HttpOnly, `SameSite=Strict` cookie. Changing the password invalidates all other sessions.
 - Setup needs a one-time code from the server log, so whoever reaches a fresh site first can't claim it.
-- Login and setup allow 5 failed attempts per minute per IP, and form posts from other sites are rejected.
+- Passkeys use WebAuthn ([go-webauthn](https://github.com/go-webauthn/webauthn)) with user verification required. Only their public keys are stored, in the `admin` document. The challenge for each sign-in travels in a 5-minute signed cookie and works once.
+- Login and setup allow 5 failed attempts per minute per IP (passkey sign-in too), and form posts from other sites are rejected.
 - Admin pages are sent with `no-store`, `noindex` and `X-Frame-Options: DENY`.
 - Article text is rendered as React elements, never as raw HTML. Links must be `https://`, `http://`, `mailto:`, `/…` or `#…`, and images `https://` or `/media/…`; anything else (e.g. `javascript:`) shows as plain text.
 - Drafts, disabled articles and pending changes never reach readers: they're excluded from public pages, search, the page's embedded data and the API.
@@ -202,7 +220,8 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 | `/{lang}/tags/{tag}` | Articles with a tag |
 | `/{lang}/about` | About the blog owner |
 | `/media/{id}.{ext}` | Uploaded images |
-| `/admin` | Admin area (articles, categories, profile, password) |
+| `/share.png` | The blog's logo as a 1200×630 link-preview picture, for pages without a cover |
+| `/admin` | Admin area (articles, categories, profile, password and passkeys) |
 | `/assets/*` | Embedded JS and CSS, cached for a year and versioned by content hash |
 | `/api/v1/languages` | Supported languages (JSON) |
 | `/api/v1/{lang}/posts?tag=&category=` | Published posts in a language, optionally filtered (JSON) |
@@ -225,33 +244,34 @@ Limits: no underline (Markdown can't store it), no nested lists (nested items ar
 ```text
 Makefile               every command (run `make` for the list)
 Dockerfile             container image: frontend build → Go build → distroless
+fly.toml               Fly.io app: one small machine that stops when idle
 .githooks/pre-commit   runs `make check` before each commit (`make hooks` installs it)
-.github/workflows/     CI/CD: lint, tests, container image (published to ghcr.io)
+.github/workflows/     CI/CD: lint, tests, container image (ghcr.io), deploy of version tags to Fly.io
 backend/
   .golangci.yml        Go lint rules
   cmd/server/          main: config, MongoDB, startup, `reset-admin` command
   internal/api/        JSON API and the Fiber app
-  internal/web/        pages, admin, autosave, bulk actions, media and about handlers
+  internal/web/        pages, admin, autosave, bulk actions, media, about, passkey and share-image handlers
   internal/ssr/        goja renderer pool
-  internal/posts/      articles: MongoDB and in-memory stores, statuses, draft copies
+  internal/posts/      articles: MongoDB and in-memory stores, statuses, draft copies, related articles
   internal/categories/ categories store (unique slugs and names)
   internal/profile/    About-page profile store
-  internal/auth/       admin credential (bcrypt), password rules
+  internal/auth/       admin credential (bcrypt), password rules, passkeys (WebAuthn)
   internal/media/      image uploads (GridFS)
   internal/web/dist/   frontend build output, embedded into the binary
 frontend/
   build.mjs            esbuild: server.js, app.js and admin.js into backend/internal/web/dist
   eslint.config.js     frontend lint rules
   src/App.tsx          public pages;  src/pages/About.tsx
-  src/admin/           admin screens, visual editor, autosave, Markdown serializer
-  src/components/      layout, Markdown renderer, contents
-  src/lib/             i18n dictionaries, article parser, countries, dates, query strings, useHydrated
+  src/admin/           admin screens, visual editor, autosave, Markdown serializer, passkey ceremonies
+  src/components/      layout, Markdown renderer, contents, share buttons
+  src/lib/             i18n dictionaries, article parser, countries, dates, query strings, share links, useHydrated
   src/server.tsx       server entry (run by goja)
   src/client.tsx       app.js entry;  src/admin-client.tsx  admin.js entry
   test/                frontend tests (node:test)
 ```
 
-MongoDB collections: `posts` (one document per translation, unique on slug and language; category and tags are kept in sync across an article's translations), `categories` (unique slug, and unique names per language ignoring case), `profile`, `admin`, and the `media` GridFS bucket (`media.files`, `media.chunks`).
+MongoDB collections: `posts` (one document per translation, unique on slug and language; category, tags and cover are kept in sync across an article's translations), `categories` (unique slug, and unique names per language ignoring case), `profile`, `admin` (the password hash, session key and passkeys' public keys), and the `media` GridFS bucket (`media.files`, `media.chunks`).
 
 ### SSR constraints
 
@@ -267,8 +287,8 @@ Pages are full server renders and links are plain `<a>` tags; there is no client
 ## Testing
 
 - **`make test-unit`** runs quickly, with no database:
-  - **Frontend** (`npm test` in `frontend/`, Node's built-in test runner): the Markdown renderer and editor serializer (e.g. text that looks like Markdown, links with parentheses, combined bold/italic), the article parser, dates and dictionaries, countries and flags, tag normalization (checked against the same cases as the Go version) and the password strength meter.
-  - **Backend** (`go test ./...`): stores, the API, server-side rendering, public and admin pages, autosave, bulk actions, categories and tags, uploads, security checks and helper functions, using in-memory stores.
+  - **Frontend** (`npm test` in `frontend/`, Node's built-in test runner): the Markdown renderer and editor serializer (e.g. text that looks like Markdown, links with parentheses, combined bold/italic), the article parser, dates and dictionaries, countries and flags, tag normalization (checked against the same cases as the Go version), share links and the password strength meter.
+  - **Backend** (`go test ./...`): stores, the API, server-side rendering, public and admin pages, autosave, bulk actions, categories and tags, related articles, link-preview tags, uploads, security checks and helper functions, using in-memory stores. Passkeys are tested end to end with a software authenticator that signs real registration and sign-in responses, including replayed, forged and tampered ones.
 - **`make test-integration`** runs the MongoDB store tests against a real database: the `make mongo` container by default, or `MONGODB_TEST_URI=mongodb://…`. Each test creates a temporary database and drops it afterwards.
 
 ## Development workflow
@@ -319,7 +339,11 @@ Don't also turn on deploys from Fly's GitHub integration in the dashboard, or ev
 
 ## Design
 
-The site keeps Wikipedia's structure (Contents sidebar, infobox, language menu, a featured article and articles grouped by category) with a simple, modern look: a narrow reading column, serif headings, hairline dividers and one accent color. On narrower screens the infobox moves above the text, and on phones the contents list moves into the article. The **Appearance** menu switches between Automatic, Light and Dark, stored in a `theme` cookie that the server reads so the right theme renders from the first paint.
+The site keeps Wikipedia's structure (Contents sidebar, infobox, a featured article and articles grouped by category) with a simple, modern look: a narrow reading column, serif headings, hairline dividers and one accent color. The logo is a "Go" mark (white on black, inverted in dark mode) beside "Blog.dev".
+
+An article reads: back link, title and subheading, tabs, share buttons, cover, summary box, then the text, followed by tags, share buttons and a back link; the infobox and related articles sit on the right. On narrower screens the infobox moves above the text and related articles move to the end, and on phones the contents list moves into the article.
+
+The top bar holds the language menu and the **Appearance** menu (Automatic, Light or Dark, stored in a `theme` cookie that the server reads so the right theme renders from the first paint).
 
 ## Troubleshooting
 
@@ -328,3 +352,5 @@ The site keeps Wikipedia's structure (Contents sidebar, infobox, language menu, 
 - **Frontend changes don't show up:** the bundles are embedded when Go compiles. Run `make frontend` (or keep `make watch` running) and restart `make run`, or run `make up` for the containers.
 - **A commit is refused:** the pre-commit hook found a lint error or failing test; the output is in `.git/pre-commit.log`, and `make check` reproduces it. `make fmt` fixes formatting. In an emergency, `git commit --no-verify` skips the hook once.
 - **The first `make lint` is slow:** it builds the pinned golangci-lint version once (about a minute); later runs take seconds.
+- **ESLint fails with "Cannot find module":** the installed packages are damaged. Run `npm ci` in `frontend/` to reinstall them from the lockfile.
+- **No "Sign in with a passkey" button, or the passkey isn't offered:** passkeys need a recent browser and a page opened over `https://` or on `localhost` (not a `192.168.x.x` address). A passkey also only works on the address it was created on, so one added on `localhost` won't appear on the live site.

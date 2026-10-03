@@ -23,6 +23,10 @@ type Credential struct {
 	SessionKey   []byte    `bson:"sessionKey"`
 	Epoch        int64     `bson:"epoch"`
 	UpdatedAt    time.Time `bson:"updatedAt"`
+	// UserID is the admin's WebAuthn user handle, created with the first
+	// passkey; Passkeys can be used to sign in instead of the password.
+	UserID   []byte    `bson:"userId,omitempty"`
+	Passkeys []Passkey `bson:"passkeys,omitempty"`
 }
 
 const (

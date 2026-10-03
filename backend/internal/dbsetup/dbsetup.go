@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/michaelputong/blog/backend/internal/auth"
 	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/posts"
 )
@@ -160,6 +161,11 @@ func schemas(languages []string) []collection {
 				"sessionKey":   typ("binData"),
 				"epoch":        typ("long", "int"),
 				"updatedAt":    typ("date"),
+				"userId":       typ("binData"), // optional: set with the first passkey
+				"passkeys": bson.M{"bsonType": []string{"array", "null"}, "maxItems": auth.MaxPasskeys, "items": object(
+					[]string{"name", "data", "createdAt"},
+					bson.M{"name": typ("string"), "data": typ("binData"), "createdAt": typ("date"), "lastUsedAt": typ("date")},
+				)},
 			},
 		)},
 		// GridFS bucket "media": the driver writes these; the schema checks

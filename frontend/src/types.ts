@@ -75,7 +75,12 @@ export type AdminPageData = PageBase & (
       notice: "" | "created" | "renamed" | "deleted";
     }
   | { page: "adminSetup"; error: string }
-  | { page: "adminPassword"; errors: Partial<Record<"current" | "password", string>>; notice: "" | "saved" }
+  | {
+      page: "adminPassword";
+      errors: Partial<Record<"current" | "password", string>>;
+      notice: "" | "saved" | "passkey-added" | "passkey-removed";
+      passkeys: PasskeyView[];
+    }
   | {
       page: "adminList";
       posts: Post[];
@@ -153,5 +158,8 @@ export type AdminForm = {
   tags: string; // comma-separated
   cover: string; // uploaded /media/ path or https:// address, "" for none
 };
+
+// Mirrors passkeyView in backend/internal/web/passkey.go.
+export type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt: string };
 
 export type CategoryForm = { slug: string; names: Record<string, string> | null };

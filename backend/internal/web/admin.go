@@ -101,6 +101,15 @@ func (h *pages) registerAdmin(app *fiber.App) {
 	admin.Get("/login", h.adminLoginForm)
 	admin.Post("/login", attempts(h.renderLogin), h.adminLogin)
 	admin.Post("/logout", h.adminLogout)
+	admin.Post("/passkey/login/begin", h.passkeyLoginBegin)
+	admin.Post("/passkey/login/finish", limiter.New(limiter.Config{
+		Max:                    5, // failed attempts per minute per IP, like the password form
+		Expiration:             time.Minute,
+		SkipSuccessfulRequests: true,
+		LimitReached: func(c *fiber.Ctx) error {
+			return jsonError(c, fiber.StatusTooManyRequests, "Too many attempts. Wait a minute and try again.")
+		},
+	}), h.passkeyLoginFinish)
 
 	admin.Use(h.requireAdmin)
 	admin.Get("/", h.adminList)
@@ -124,6 +133,9 @@ func (h *pages) registerAdmin(app *fiber.App) {
 	admin.Post("/categories/:slug/delete", h.adminDeleteCategory)
 	admin.Get("/password", h.adminPasswordForm)
 	admin.Post("/password", h.adminPasswordSave)
+	admin.Post("/passkeys/register/begin", h.passkeyRegisterBegin)
+	admin.Post("/passkeys/register/finish", h.passkeyRegisterFinish)
+	admin.Post("/passkeys/:id/delete", h.passkeyDelete)
 	admin.Use(h.notFound)
 }
 
@@ -280,14 +292,15 @@ func (h *pages) adminLogout(c *fiber.Ctx) error {
 
 type adminPasswordPage struct {
 	base
-	Errors map[string]string `json:"errors"`
-	Notice string            `json:"notice"`
+	Errors   map[string]string `json:"errors"`
+	Notice   string            `json:"notice"` // "saved", "passkey-added" or "passkey-removed"
+	Passkeys []passkeyView     `json:"passkeys"`
 }
 
 func (h *pages) adminPasswordForm(c *fiber.Ctx) error {
-	notice := ""
-	if c.Query("notice") == "saved" {
-		notice = "saved"
+	notice := c.Query("notice")
+	if notice != "saved" && notice != "passkey-added" && notice != "passkey-removed" {
+		notice = ""
 	}
 	return h.renderPassword(c, fiber.StatusOK, nil, notice)
 }
@@ -296,7 +309,13 @@ func (h *pages) renderPassword(c *fiber.Ctx, status int, errs map[string]string,
 	if errs == nil {
 		errs = map[string]string{}
 	}
-	return h.render(c, status, h.cfg.Languages[0], nil, adminPasswordPage{base: h.adminBase(c, "adminPassword"), Errors: errs, Notice: notice})
+	cred, _, err := h.credential(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return h.render(c, status, h.cfg.Languages[0], nil, adminPasswordPage{
+		base: h.adminBase(c, "adminPassword"), Errors: errs, Notice: notice, Passkeys: passkeyViews(cred),
+	})
 }
 
 func (h *pages) adminPasswordSave(c *fiber.Ctx) error {

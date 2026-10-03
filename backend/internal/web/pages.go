@@ -135,9 +135,10 @@ func Register(app *fiber.App, cfg Config) {
 }
 
 type pages struct {
-	cfg     Config
-	version string
-	setup   *setupCodes
+	cfg        Config
+	version    string
+	setup      *setupCodes
+	challenges usedChallenges // passkey challenges already answered
 }
 
 // announceSetup logs a setup code at startup when no admin exists yet, so
