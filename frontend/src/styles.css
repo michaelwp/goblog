@@ -172,6 +172,13 @@ a:hover {
 .sidebar > * {
   position: sticky;
   top: 6.5rem;
+  /* A long contents list scrolls on its own instead of running off the window. */
+  max-height: calc(100vh - 7.5rem);
+  max-height: calc(100dvh - 7.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain; /* reaching its end doesn't scroll the page */
+  scrollbar-width: thin;
+  padding-right: 0.5rem; /* room for the scrollbar and focus outlines */
 }
 
 .content {
