@@ -695,11 +695,11 @@ export function AdminEdit(props: Page<"adminEdit">) {
     discarded: <>Draft changes discarded. The editor shows the published version again.</>,
   };
 
-  // The action buttons, shown at the top and the bottom of the form. Both sets
-  // submit the same form; pressing Enter uses the first button in the page,
-  // so the safe choice (saving, never publishing) comes first.
-  const actions = (position: "top" | "bottom") => (
-    <div className={`admin-actions admin-actions-${position}`}>
+  // The action buttons, in one bar that sticks to the bottom of the window
+  // while the form is scrolled. Pressing Enter uses the first button in the
+  // form, so the safe choice (saving, never publishing) comes first.
+  const actions = (
+    <div className="admin-actions admin-actions-sticky">
       {current === "published" ? (
         <>
           <button type="submit" name="action" value="revise" className="btn btn-secondary">
@@ -732,6 +732,11 @@ export function AdminEdit(props: Page<"adminEdit">) {
         </>
       )}
       <AutosaveStatus state={autosave} />
+      {!isNew && (
+        <a className="btn btn-quiet admin-preview" href={`${base}/preview`} target="_blank" rel="noreferrer">
+          Preview ↗
+        </a>
+      )}
       <a className="btn btn-quiet admin-cancel" href="/admin">
         Cancel
       </a>
@@ -801,7 +806,6 @@ export function AdminEdit(props: Page<"adminEdit">) {
       {!isNew && <form id="discard-draft" method="post" action={`${base}/discard`} hidden />}
 
       <form ref={formRef} className="admin-card admin-form" method="post" action={action} noValidate>
-        {actions("top")}
         <div className="field-row">
           <Field
             label="Slug"
@@ -884,7 +888,7 @@ export function AdminEdit(props: Page<"adminEdit">) {
           error={errors.summary}
           hint="One or two sentences that introduce the article: shown under the cover image, on the main page, in search results, and to search engines and social media."
         >
-          <textarea name="summary" defaultValue={form.summary} rows={2} maxLength={300} />
+          <textarea name="summary" defaultValue={form.summary} rows={2} maxLength={400} />
         </Field>
 
         <ImageField
@@ -900,7 +904,7 @@ export function AdminEdit(props: Page<"adminEdit">) {
 
         <EditorField label="Body" name="body" defaultValue={form.body} rows={20} error={errors.body} />
 
-        {actions("bottom")}
+        {actions}
       </form>
 
       {!isNew && (

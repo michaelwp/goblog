@@ -772,8 +772,8 @@ func (h *pages) validate(ctx context.Context, f adminForm, mode string, status p
 	if utf8.RuneCountInString(f.Subtitle) > 200 {
 		errs["subtitle"] = "Keep the subheading under 200 characters."
 	}
-	if utf8.RuneCountInString(f.Summary) > 300 {
-		errs["summary"] = "Keep the summary under 300 characters."
+	if utf8.RuneCountInString(f.Summary) > 400 {
+		errs["summary"] = "Keep the summary under 400 characters."
 	}
 	if f.Body == "" && status == posts.Published {
 		errs["body"] = "Write the article body before publishing (or save it as a draft)."

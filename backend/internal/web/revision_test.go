@@ -130,13 +130,12 @@ func TestAutosave(t *testing.T) {
 	}
 }
 
-func TestEditorActionsAtTopAndBottom(t *testing.T) {
+func TestEditorActionsInOneStickyBar(t *testing.T) {
 	app, _ := newAdminApp(t, testPassword)
 	session := login(t, app)
 	body := send(t, app, "GET", "/admin/posts/why-ssr/en", nil, session).body
-	top, bottom := strings.Index(body, "admin-actions-top"), strings.Index(body, "admin-actions-bottom")
-	if top < 0 || bottom < 0 || strings.Count(body, `value="publish"`) != 2 {
-		t.Fatalf("action bars: top %d, bottom %d, publish buttons %d", top, bottom, strings.Count(body, `value="publish"`))
+	if strings.Count(body, "admin-actions-sticky") != 1 || strings.Count(body, `value="publish"`) != 1 {
+		t.Fatalf("action bars %d, publish buttons %d", strings.Count(body, "admin-actions-sticky"), strings.Count(body, `value="publish"`))
 	}
 	// Enter submits the first button in the form: it must be the safe "Save draft", not Publish.
 	first := body[strings.Index(body, `<form class="admin-card admin-form"`):]

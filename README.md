@@ -135,7 +135,7 @@ Each translation has a status:
 | **Published** | Yes | Save draft · Publish changes · Disable · Move to drafts |
 | **Disabled** | No: hidden from pages, search, language links and the API, but not deleted | Save changes · Publish again |
 
-The buttons appear both above and below the form. Pressing Enter always takes the safe action (save, never publish).
+The buttons sit in one bar that stays pinned to the bottom of the window while you scroll the form, together with the autosave status, **Preview** and **Cancel**. Pressing Enter always takes the safe action (save, never publish).
 
 - **Editing a live article never changes it directly.** Edits, including autosaves, go into a *draft copy*. Readers, search and the API keep seeing the published version, while the editor and **Preview** show the draft. **Publish changes** replaces the live version with the draft, and **Discard changes** drops it. The list marks such translations **Edited**. Disabling or moving an article to drafts folds pending changes in first.
 - **Autosave:** changes are saved about once a minute, and a status next to the buttons shows "Unsaved changes", "Saving…" or "Draft saved at …". Autosave never publishes. A new article is created as a draft once it has a slug and title. Clicking a button while an autosave is in progress waits for it to finish, and leaving the page with unsaved changes asks first.
@@ -153,7 +153,7 @@ The buttons appear both above and below the form. Pressing Enter always takes th
 | **Category**, **Tags** | No | Shared by all translations | Infobox, category and tag pages, related articles |
 | **Title** | Yes (up to 200 characters) | Per language | Page heading, lists, browser tab, link previews |
 | **Subheading** | No (up to 200; about 120 fits two lines) | Per language | A line under the title |
-| **Summary** | No (up to 300) | Per language | A box above the article text, on the main page and in search results, and as the description for search engines and link previews |
+| **Summary** | No (up to 400) | Per language | A box above the article text, on the main page and in search results, and as the description for search engines and link previews |
 | **Cover image** | No | Shared by all translations | Above the summary, and as the picture in link previews (otherwise the blog's logo). A wide image (1200×630) works best. |
 | **Body** | Only to publish | Per language | The article |
 
