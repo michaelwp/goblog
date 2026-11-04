@@ -134,6 +134,7 @@ func (h *pages) registerAdmin(app *fiber.App) {
 	admin.Post("/suggest/cover", h.adminSuggestCover)
 	admin.Post("/suggest/field", h.adminSuggestField)
 	admin.Post("/translate", h.adminTranslate)
+	admin.Post("/generate", h.adminGenerate)
 	admin.Post("/posts/:slug/:lang/discard", h.adminDiscard)
 	admin.Post("/new/autosave", h.adminAutosaveNew)
 	admin.Post("/articles/:slug/delete", h.adminDeleteAll)

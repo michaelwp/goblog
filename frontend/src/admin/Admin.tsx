@@ -17,6 +17,7 @@ import { ImageField, PhotoField } from "./PhotoField";
 import { RichEditor } from "./RichEditor";
 import { parseTags } from "./TagInput";
 import { AIFieldButton, AIFieldStatus, AIPanel, Offer, useAIAssist } from "./aiAssist";
+import { ArticleChat } from "./ArticleChat";
 import { NEW_CATEGORY, type Taxonomy, TaxonomyFields } from "./TaxonomyFields";
 import { type AutosaveState, useAutosave } from "./useAutosave";
 
@@ -695,6 +696,9 @@ export function AdminEdit(props: Page<"adminEdit">) {
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>(categories);
   const [cover, setCover] = useState(form.cover);
   const [subtitle, setSubtitle] = useState(form.subtitle);
+  // A new article's Language dropdown; the AI writes in the chosen language.
+  const [chosenLang, setChosenLang] = useState(form.lang);
+  const writingLang = isNew && !isTranslation ? chosenLang : articleLang;
   // The body editor's starting text; a new version reloads it (translations).
   const [body, setBody] = useState({ value: form.body, version: 0 });
 
@@ -754,12 +758,14 @@ export function AdminEdit(props: Page<"adminEdit">) {
         if (autoSlug && (!slugInput || !slugEdited)) setSlugInput(slugify(title));
       },
       slug,
-      lang: articleLang,
+      lang: writingLang,
       setBody: (value) => setBody((b) => ({ value, version: b.version + 1 })),
       canGenerateImages: aiImages,
       setSlug: (value) => {
+        if (!autoSlug) return false; // fixed once the article exists, or shared by translations
         setSlugInput(value);
         setSlugEdited(false); // still the AI's: a later AI title may update it
+        return true;
       },
     }),
   };
@@ -896,6 +902,10 @@ export function AdminEdit(props: Page<"adminEdit">) {
       {!isNew && <form id="discard-draft" method="post" action={`${base}/discard`} hidden />}
 
       <form ref={formRef} className="admin-card admin-form" method="post" action={action} noValidate>
+        {/* A brand-new article (not a translation) can be written from a prompt;
+            the chat stays after autosave first saves it. */}
+        {ai.enabled && mode === "new" && Object.keys(translations).length === 0 && <ArticleChat busy={ai.busy} generate={ai.generateArticle} languageName={languageName(writingLang)} />}
+
         <div className="field-row">
           <Field
             label="Slug"
@@ -933,7 +943,7 @@ export function AdminEdit(props: Page<"adminEdit">) {
           </Field>
           {isNew && !isTranslation ? (
             <Field label="Language" name="lang" error={errors.lang}>
-              <select name="lang" defaultValue={articleLang}>
+              <select name="lang" value={chosenLang} onChange={(e) => setChosenLang(e.target.value)}>
                 {languages.map((l) => (
                   <option key={l} value={l}>
                     {languageName(l)}

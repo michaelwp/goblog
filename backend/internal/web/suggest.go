@@ -101,7 +101,7 @@ func (h *pages) adminSuggest(c *fiber.Ctx) error {
 	}
 	images := articleImages(f.Body)
 	input, _ := json.MarshalIndent(map[string]any{
-		"article":              map[string]string{"language": f.Lang, "title": f.Title, "summary": f.Summary, "body": body},
+		"article":              map[string]string{"language": languageName(f.Lang), "title": f.Title, "summary": f.Summary, "body": body},
 		"images":               images,
 		"existingCategories":   catList,
 		"existingTags":         known,
@@ -480,7 +480,7 @@ func (h *pages) adminSuggestField(c *fiber.Ctx) error {
 	if f.Title == "" && f.Body == "" {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": "Write a title or some text first."})
 	}
-	input := map[string]any{"article": map[string]string{"language": f.Lang, "title": f.Title, "summary": f.Summary, "body": body}}
+	input := map[string]any{"article": map[string]string{"language": languageName(f.Lang), "title": f.Title, "summary": f.Summary, "body": body}}
 	if field == "tags" {
 		all, err := h.cfg.Store.All(c.UserContext())
 		if err != nil {

@@ -39,10 +39,13 @@ function fieldValue(form: HTMLFormElement, name: string): string {
   return String(new FormData(form).get(name) ?? "").trim();
 }
 
-// The article as the AI endpoints read it.
-function articleBody(form: HTMLFormElement): URLSearchParams {
+// The article as the AI endpoints read it. lang is the language being
+// written: once the article exists the form has no "lang" field (the
+// language switcher replaces the dropdown), so it's passed in.
+function articleBody(form: HTMLFormElement, lang: string): URLSearchParams {
   const body = new URLSearchParams();
-  for (const key of ["title", "summary", "body", "lang"]) body.set(key, fieldValue(form, key));
+  for (const key of ["title", "summary", "body"]) body.set(key, fieldValue(form, key));
+  body.set("lang", lang);
   return body;
 }
 
@@ -64,10 +67,10 @@ export function useAIAssist(opts: {
   setCover: (url: string) => void;
   fillSlug: (title: string) => void; // make the slug from the title, if it's the AI's to set
   slug: string; // the article, for translating one of its other languages
-  lang: string; // the language being edited
+  lang: string; // the language being written (the Language dropdown's choice on a new article)
   setBody: (markdown: string) => void;
   canGenerateImages: boolean; // the provider makes images: Suggest also generates a cover
-  setSlug: (slug: string) => void; // the slug ✨ button's result
+  setSlug: (slug: string) => boolean; // sets the slug; false once it can't change (the article is saved)
 }) {
   const { formRef } = opts;
   // What's running: "" | "text" | "translate" | an AIField.
@@ -87,7 +90,7 @@ export function useAIAssist(opts: {
     setBusy("text");
     setStatus({ kind: "info", text: "Asking the AI for a title, summary, tags, category and cover…" });
     try {
-      const out = await post<Partial<Suggestion>>("/admin/suggest", articleBody(form));
+      const out = await post<Partial<Suggestion>>("/admin/suggest", articleBody(form, latest.current.lang));
       if (!out.ok) {
         setStatus({ kind: "error", text: out.error ?? "The AI couldn't make suggestions." });
         return;
@@ -154,7 +157,7 @@ export function useAIAssist(opts: {
   // can be removed or replaced like an upload.
   async function makeCover(form: HTMLFormElement): Promise<{ ok: boolean; text: string }> {
     try {
-      const out = await post<{ cover?: string; generated?: boolean }>("/admin/suggest/cover", articleBody(form));
+      const out = await post<{ cover?: string; generated?: boolean }>("/admin/suggest/cover", articleBody(form, latest.current.lang));
       if (!out.ok || !out.cover) return { ok: false, text: out.error ?? "The AI couldn't make a cover." };
       latest.current.setCover(out.cover);
       return {
@@ -187,7 +190,7 @@ export function useAIAssist(opts: {
     setBusy(field);
     setStatus({ kind: "info", text: "Writing…", field });
     try {
-      const body = articleBody(form);
+      const body = articleBody(form, latest.current.lang);
       body.set("field", field);
       const out = await post<{ value?: string | string[] }>("/admin/suggest/field", body);
       if (!out.ok || !out.value) {
@@ -212,6 +215,70 @@ export function useAIAssist(opts: {
       setStatus({ kind: "info", text: "Done. Edit it as you like.", field });
     } catch {
       setStatus({ kind: "error", text: "Couldn't reach the server.", field });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // A whole article from the chat box: writes (or, with the form already
+  // filled, revises) title, slug, summary, tags, category and text, then
+  // makes a cover if there's none. Resolves to the AI's note for the chat.
+  async function generateArticle(prompt: string, history: string[]): Promise<{ ok: boolean; text: string }> {
+    const form = formRef.current;
+    if (!form || busy) return { ok: false, text: "Wait for the current AI task to finish." };
+    setBusy("article");
+    setStatus(null);
+    try {
+      const { taxonomy } = latest.current;
+      const body = articleBody(form, latest.current.lang);
+      body.set("prompt", prompt);
+      body.set("slug", latest.current.slug); // never suggested as its own related article
+      for (const h of history) body.append("history", h);
+      body.set("tags", taxonomy.tags.join(", "));
+      body.set("category", taxonomy.category === NEW_CATEGORY ? (taxonomy.newCategory?.[latest.current.lang] ?? "") : taxonomy.category);
+      const out = await post<{
+        reply?: string;
+        title?: string;
+        slug?: string;
+        summary?: string;
+        tags?: string[];
+        category?: string;
+        newCategory?: Record<string, string>;
+        body?: string;
+      }>("/admin/generate", body);
+      if (!out.ok || !out.title || !out.body) return { ok: false, text: out.error ?? "The AI couldn't write the article." };
+
+      setField(form, "title", out.title);
+      setField(form, "summary", out.summary ?? "");
+      const slugKept = !!out.slug && out.slug !== latest.current.slug && !latest.current.setSlug(out.slug);
+      latest.current.setBody(out.body);
+      // Tags and category: the AI's, when it gave any; otherwise what the
+      // author had stays (an empty answer must not wipe their choice).
+      const cur = latest.current.taxonomy;
+      const tags = (out.tags ?? []).slice(0, MAX_TAG_COUNT);
+      latest.current.setTaxonomy({
+        ...cur,
+        tags: tags.length ? tags : cur.tags,
+        ...(out.category
+          ? { category: out.category, newCategory: null }
+          : out.newCategory
+            ? { category: NEW_CATEGORY, newCategory: out.newCategory }
+            : {}),
+      });
+      setOffers({});
+      let note = out.reply ?? "Done.";
+      if (slugKept) note += ` The address stays “${latest.current.slug}”: an article's slug can't change once it's saved.`;
+
+      if (!latest.current.cover && latest.current.canGenerateImages) {
+        setBusy("cover");
+        setStatus({ kind: "info", text: "Generating a cover image… this can take up to a minute.", field: "cover" });
+        const cover = await makeCover(form);
+        setStatus({ kind: cover.ok ? "info" : "error", text: cover.text, field: "cover" });
+        note += cover.ok ? " I also made a cover image." : ` (No cover: ${cover.text})`;
+      }
+      return { ok: true, text: note };
+    } catch {
+      return { ok: false, text: "Couldn't reach the server." };
     } finally {
       setBusy("");
     }
@@ -287,6 +354,7 @@ export function useAIAssist(opts: {
     busy,
     translate: (from: Locale) => void translate(from),
     translateField: (field: "title" | "summary" | "body", from: Locale) => void translateField(field, from),
+    generateArticle,
     suggestField: (field: "title" | "summary" | "tags" | "slug") => void suggestField(field),
     status,
     offers,
