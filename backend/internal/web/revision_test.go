@@ -90,7 +90,8 @@ func TestAutosave(t *testing.T) {
 		return res.code, out
 	}
 
-	// A new article isn't saved until it has a valid slug and title.
+	// A new article isn't saved until it has a valid slug and title; the
+	// slug is never made up from the title behind the author's back.
 	code, out := call("/admin/new/autosave", url.Values{"slug": {""}, "lang": {"en"}, "title": {"x"}, "date": {"2026-09-28"}})
 	if code != 422 || !strings.HasPrefix(out["error"], "Autosave paused: Enter a slug") {
 		t.Errorf("autosave without slug: %d %v", code, out)

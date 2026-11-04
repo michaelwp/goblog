@@ -23,7 +23,7 @@ type navCategory struct {
 // publicBase is newBase plus the categories the page's menus link to.
 // Categories without published articles in lang are left out.
 func (h *pages) publicBase(c *fiber.Ctx, page, lang string) (base, error) {
-	b := newBase(c, page, lang)
+	b := h.newBase(c, page, lang)
 	nav, err := h.navCategories(c, lang)
 	b.Categories = nav
 	return b, err

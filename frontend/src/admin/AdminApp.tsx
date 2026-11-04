@@ -1,8 +1,16 @@
 import { getDictionary } from "../lib/i18n";
 import type { AdminPageData } from "../types";
-import { AdminCategories, AdminEdit, AdminList, AdminLogin, AdminPassword, AdminProfile, AdminSetup } from "./Admin";
+import { AdminCategories, AdminThemeContext, AdminVersionContext, AdminEdit, AdminList, AdminLogin, AdminPassword, AdminProfile, AdminSetup } from "./Admin";
 
 export function AdminApp(props: AdminPageData) {
+  return (
+    <AdminThemeContext.Provider value={props.theme}>
+      <AdminVersionContext.Provider value={props.version}>{adminPage(props)}</AdminVersionContext.Provider>
+    </AdminThemeContext.Provider>
+  );
+}
+
+function adminPage(props: AdminPageData) {
   switch (props.page) {
     case "adminLogin":
       return <AdminLogin {...props} />;

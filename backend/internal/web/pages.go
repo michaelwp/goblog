@@ -18,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 
+	"github.com/michaelputong/blog/backend/internal/ai"
 	"github.com/michaelputong/blog/backend/internal/auth"
 	"github.com/michaelputong/blog/backend/internal/categories"
 	"github.com/michaelputong/blog/backend/internal/media"
@@ -43,6 +44,10 @@ type Config struct {
 	BcryptCost int
 	// Logf receives the admin setup code; nil means log.Printf.
 	Logf func(format string, args ...any)
+	// AI suggests tags and a category in the editor; nil turns that off.
+	AI *ai.Client
+	// Version of this build (e.g. "v1.4.0"), shown in the footer; "" hides it.
+	Version string
 }
 
 // Page payloads handed to the React renderer. They must match PageData in
@@ -54,6 +59,7 @@ type base struct {
 	// Categories with published articles, for public pages' menus.
 	Categories []navCategory `json:"categories,omitempty"`
 	Year       int           `json:"year"` // for the footer; from the server so SSR and hydration agree
+	Version    string        `json:"version"`
 }
 
 type homePage struct {
@@ -100,8 +106,8 @@ func (b base) bundle() string {
 	return "app"
 }
 
-func newBase(c *fiber.Ctx, page, lang string) base {
-	return base{Page: page, Lang: lang, Theme: theme(c), Year: time.Now().Year()}
+func (h *pages) newBase(c *fiber.Ctx, page, lang string) base {
+	return base{Page: page, Lang: lang, Theme: theme(c), Year: time.Now().Year(), Version: h.cfg.Version}
 }
 
 // Register mounts the embedded assets and the server-rendered pages. Call it

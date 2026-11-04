@@ -115,9 +115,15 @@ Run `make` to list every target.
 | `PORT` | HTTP port (default `8080`). |
 | `LANGUAGES` | Supported languages, default first (default `en,id`). Keep in sync with `frontend/src/lib/i18n.ts`. |
 | `SITE_URL` | Public address used in share links and link previews, e.g. `https://goblog.dev` (default: the address each request came in on, which is right unless several domains point at the app). |
+| `AI_API_KEY` | Optional: turns on AI tag and category suggestions in the editor. A key from any provider works and is recognised by its prefix: OpenAI (`sk-`), Anthropic (`sk-ant-`), Google Gemini (`AIza`), Groq (`gsk_`), OpenRouter (`sk-or-`), xAI (`xai-`). Swap the key to switch provider; no code changes. |
+| `AI_BASE_URL` | Optional: the OpenAI-compatible endpoint for any other provider, e.g. `https://api.mistral.ai/v1` or a local Ollama at `http://localhost:11434/v1`. |
+| `AI_MODEL` | Optional: overrides the provider's default model (e.g. `gpt-4.1-mini` for OpenAI, `claude-haiku-5-5` for Anthropic, `gemini-2.5-flash` for Gemini). |
+| `AI_IMAGE_MODEL` | Optional: the model that generates cover images (defaults: `gpt-image-1` for OpenAI, `imagen-3.0-generate-002` for Gemini, `grok-2-image` for xAI; other providers have none and pick a cover from the article's images instead). Set it to enable generation with `AI_BASE_URL`. |
 | `MONGODB_TEST_URI` | MongoDB for `make test-integration` (default: `localhost:27018`, the `make mongo` container). Tests create and drop their own temporary databases. |
 
-No secrets go in `.env`: the admin password is stored, hashed, in MongoDB.
+The site footer and the admin show the build's version: the release tag (e.g. `v1.4.0`) for tagged deploys, `main-<commit>` for other CI builds, and `git describe` for `make run`/`make build`/`make up`/`make fly-deploy` (e.g. `v1.4.0-2-g1252cee-dirty`). A plain `go run` shows `dev`.
+
+The only secret that may go in `.env` is `AI_API_KEY`; the admin password is stored, hashed, in MongoDB.
 
 ## Using the admin
 
@@ -149,10 +155,9 @@ The buttons sit in one bar that stays pinned to the bottom of the window while y
 
 | Field | Required? | Written | Shown |
 | --- | --- | --- | --- |
-| **Slug**, **Language**, **Publish date** | Yes | Slug shared by all translations | The article's address, the infobox |
+| **Slug**, **Language**, **Publish date** | Yes (type the slug, or let ✨ Suggest with AI make it from the title) | Slug shared by all translations | The article's address, the infobox |
 | **Category**, **Tags** | No | Shared by all translations | Infobox, category and tag pages, related articles |
 | **Title** | Yes (up to 200 characters) | Per language | Page heading, lists, browser tab, link previews |
-| **Subheading** | No (up to 200; about 120 fits two lines) | Per language | A line under the title |
 | **Summary** | No (up to 400) | Per language | A box above the article text, on the main page and in search results, and as the description for search engines and link previews |
 | **Cover image** | No | Shared by all translations | Above the summary, and as the picture in link previews (otherwise the blog's logo). A wide image (1200×630) works best. |
 | **Body** | Only to publish | Per language | The article |
@@ -166,11 +171,15 @@ Both describe the whole article: they're shared by all its translations, so sett
 - **Categories** are managed under **Admin → Categories**. Each has a name in every language (e.g. Security / Keamanan) and a slug used in its address (`/en/categories/security`); leave the slug empty to generate it from the English name. Categories are unique: a second category can't reuse a slug, or a name in either language (ignoring case). Names can be changed later but slugs can't. Deleting a category keeps its articles, which become uncategorized. In the editor, pick at most one category per article.
 - **Tags** are keywords typed in the editor's **Tags** field. Press Enter or comma after each; suggestions come from tags already in use. Tags are normalized (lowercase, spaces become hyphens) and can use letters, numbers and `- + # .` (so `c++`, `c#` and `node.js` work). Up to 10 per article.
 
+- **AI suggestions** (when `AI_API_KEY` is set): nothing is filled in until you click **✨ Suggest with AI**, which proposes a title, slug (made from the title, for a new article whose slug you haven't typed), summary, tags, a category and a cover from what you've written. Empty fields are filled in; for a title or summary you already wrote, the alternative appears under the field with **Use this**. Tags are added to yours, and the category is replaced. If no category fits, it proposes a new one, named in every language, shown as "New: …" with editable names; it's created when the article is saved (or reused if a category already has that name). When the article has no cover and the key can make images (OpenAI, Gemini or xAI), the same click also generates one and uploads it with your images (a few cents each); it stays editable like any cover: remove it, upload your own, or click **✨ Generate with AI** under the cover for another. Other providers pick the best image in the text instead (**✨ Pick from article**). If the default image model isn't available to your key (retired, renamed or not allowed), the server asks the provider which image models it has and uses the newest that works, and it drops settings a model doesn't accept; the model that worked is remembered until restart. Everything stays editable.
+- **One field at a time:** each of **Slug**, **Tags**, **Title** and **Summary** has its own **✨ AI** button that does just that field: it writes a new slug, title or summary (replacing the current one), or adds tags to yours. **✨ Generate with AI** under the cover makes just a cover, and **✨ Translate from EN/ID** beside **Title**, **Summary** and **Body** translates just that field from the article's other language (asking before it replaces the text). The slug button appears only while the slug can still be changed. Each field's result or error shows under it.
+- **AI translation** (when `AI_API_KEY` is set): when the article exists in another language, **✨ Translate from Bahasa Indonesia** (on the English version) or **✨ Translate from English** (on the Indonesian one) fills the title, summary and text with a translation of that version, including its unpublished changes. Markdown, links, images and code are kept; long articles are translated in parts. It asks before replacing anything you've written, and nothing is saved or published until you do. Read it through before publishing.
+
 On the site, the main page groups articles by category, each category and tag has its own page, and **Search** can combine words, a category and a tag. Only published articles count.
 
 ### Writing
 
-The editor is visual: text looks as it will on the site while you write. The toolbar covers text style (paragraph, heading, subheading), bold, italic, strikethrough, inline code, links, bulleted and numbered lists, quotes, code blocks, dividers, images, and undo/redo. Shortcuts: ⌘/Ctrl + B, I, K (link) and Z. Selecting an image shows a caption field. Two more tabs: **Markdown** shows and edits the underlying text, and **Preview** renders it exactly as the site will.
+The editor is visual: text looks as it will on the site while you write. The toolbar covers text style (paragraph, heading, subheading), bold, italic, strikethrough, inline code, links, bulleted and numbered lists, quotes, code blocks, dividers, images, and undo/redo. Shortcuts: ⌘/Ctrl + B, I, K (link) and Z. Selecting an image shows a caption field and **View full size**; double-clicking an image opens it full size too, and so does clicking the cover (or profile photo) preview. The viewer shows the image's size in pixels and its caption; ← and → step through the article's images, and Esc closes it. Two more tabs: **Markdown** shows and edits the underlying text, and **Preview** renders it exactly as the site will.
 
 Articles and profile bios are stored as Markdown:
 

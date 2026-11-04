@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -38,12 +37,9 @@ type categoryForm struct {
 
 const maxCategoryName = 50
 
-var nonSlugChars = regexp.MustCompile(`[^a-z0-9]+`)
-
-// slugFromName makes "Web & Cloud" into "web-cloud".
-func slugFromName(name string) string {
-	return strings.Trim(nonSlugChars.ReplaceAllString(strings.ToLower(name), "-"), "-")
-}
+// slugFromName makes "Web & Cloud" into "web-cloud", the same way article
+// slugs are made from titles.
+func slugFromName(name string) string { return slugify(name) }
 
 func (h *pages) readCategoryForm(c *fiber.Ctx) categoryForm {
 	f := categoryForm{Slug: strings.ToLower(strings.TrimSpace(strings.Clone(c.FormValue("slug")))), Names: map[string]string{}}

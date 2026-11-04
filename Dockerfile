@@ -13,7 +13,9 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 COPY --from=frontend /src/backend/internal/web/dist ./internal/web/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/blog ./cmd/server
+# Shown in the site footer: the release tag (v1.2.3), or main-<commit>.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/blog ./cmd/server
 
 # 3. Ship just the binary.
 FROM gcr.io/distroless/static-debian12:nonroot

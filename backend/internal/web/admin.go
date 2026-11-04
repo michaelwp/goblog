@@ -8,10 +8,12 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/michaelputong/blog/backend/internal/auth"
 	"github.com/michaelputong/blog/backend/internal/posts"
@@ -54,6 +56,8 @@ type adminEditPage struct {
 	// the editor's language switcher.
 	Translations map[string]string `json:"translations"`
 	DraftSavedAt string            `json:"draftSavedAt"` // set when a published article has unpublished changes
+	AIEnabled    bool              `json:"aiEnabled"`    // the editor can ask the AI for suggestions
+	AIImages     bool              `json:"aiImages"`     // ...and the AI can generate a cover image
 }
 
 type adminForm struct {
@@ -68,6 +72,12 @@ type adminForm struct {
 	Category string `json:"category"`
 	Tags     string `json:"tags"`  // comma-separated
 	Cover    string `json:"cover"` // uploaded /media/ path or https:// address, "" for none
+	// Names, by language, of a category to create on save when Category is
+	// newCategoryValue (usually an AI suggestion the author may edit).
+	NewCategory map[string]string `json:"newCategory"`
+	// A category autosave created for the new names, to rename rather than
+	// make another if they changed since (see saveWithCategory).
+	ReplacesCategory string `json:"-"`
 }
 
 const dateLayout = "2006-01-02"
@@ -120,6 +130,10 @@ func (h *pages) registerAdmin(app *fiber.App) {
 	admin.Post("/posts/:slug/:lang/delete", h.adminDelete)
 	admin.Get("/posts/:slug/:lang/preview", h.adminPreview)
 	admin.Post("/posts/:slug/:lang/autosave", h.adminAutosave)
+	admin.Post("/suggest", h.adminSuggest)
+	admin.Post("/suggest/cover", h.adminSuggestCover)
+	admin.Post("/suggest/field", h.adminSuggestField)
+	admin.Post("/translate", h.adminTranslate)
 	admin.Post("/posts/:slug/:lang/discard", h.adminDiscard)
 	admin.Post("/new/autosave", h.adminAutosaveNew)
 	admin.Post("/articles/:slug/delete", h.adminDeleteAll)
@@ -172,7 +186,7 @@ func (h *pages) requireAdmin(c *fiber.Ctx) error {
 }
 
 func (h *pages) adminBase(c *fiber.Ctx, page string) base {
-	return newBase(c, page, h.cfg.Languages[0])
+	return h.newBase(c, page, h.cfg.Languages[0])
 }
 
 func (h *pages) startSession(c *fiber.Ctx, cred auth.Credential) {
@@ -442,12 +456,16 @@ func (h *pages) adminCreate(c *fiber.Ctx) error {
 	form := readForm(c)
 	action := c.FormValue("action")
 	status := nextStatus(action, "")
-	p, errs := h.validate(c.UserContext(), form, "new", status)
+	ctx := c.UserContext()
+	p, errs := h.validate(ctx, form, "new", status)
 	if len(errs) == 0 {
-		err := h.cfg.Store.Create(c.UserContext(), p)
-		if errors.Is(err, posts.ErrExists) {
-			errs = map[string]string{"slug": "An article with this slug already exists in this language."}
-		} else if err != nil {
+		msg, err := h.saveWithCategory(ctx, &p, form, func() error { return h.cfg.Store.Create(ctx, p) })
+		switch {
+		case msg != "":
+			errs = map[string]string{"category": msg}
+		case errors.Is(err, posts.ErrExists):
+			errs = map[string]string{"slug": slugTaken(p.Slug)}
+		case err != nil:
 			return h.fail(c, err)
 		}
 	}
@@ -544,7 +562,13 @@ func (h *pages) adminUpdate(c *fiber.Ctx) error {
 		}
 		return h.renderEdit(c, fiber.StatusUnprocessableEntity, st)
 	}
-	if err := h.cfg.Store.Update(c.UserContext(), p); err != nil {
+	ctx := c.UserContext()
+	msg, err := h.saveWithCategory(ctx, &p, form, func() error { return h.cfg.Store.Update(ctx, p) })
+	if msg != "" {
+		st := editState{mode: "edit", status: existing.Status, form: form, errs: map[string]string{"category": msg}}
+		return h.renderEdit(c, fiber.StatusUnprocessableEntity, st)
+	}
+	if err != nil {
 		return h.fail(c, err)
 	}
 	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
@@ -592,7 +616,7 @@ func (h *pages) adminDiscard(c *fiber.Ctx) error {
 
 func autosaveError(c *fiber.Ctx, status int, errs map[string]string) error {
 	msg := "Autosave paused: fix the highlighted fields."
-	for _, key := range []string{"slug", "lang", "title", "subtitle", "date", "summary", "cover", "body"} {
+	for _, key := range []string{"slug", "lang", "title", "subtitle", "date", "category", "tags", "summary", "cover", "body"} {
 		if m, ok := errs[key]; ok {
 			msg = "Autosave paused: " + m
 			break
@@ -607,19 +631,23 @@ func (h *pages) adminAutosaveNew(c *fiber.Ctx) error {
 	if len(errs) > 0 {
 		return autosaveError(c, fiber.StatusUnprocessableEntity, errs)
 	}
-	err := h.cfg.Store.Create(c.UserContext(), p)
-	if errors.Is(err, posts.ErrExists) {
-		return autosaveError(c, fiber.StatusConflict, map[string]string{"slug": "an article with this slug already exists in this language."})
-	}
-	if err != nil {
+	ctx := c.UserContext()
+	msg, err := h.saveWithCategory(ctx, &p, form, func() error { return h.cfg.Store.Create(ctx, p) })
+	switch {
+	case msg != "":
+		return autosaveError(c, fiber.StatusUnprocessableEntity, map[string]string{"category": msg})
+	case errors.Is(err, posts.ErrExists):
+		return autosaveError(c, fiber.StatusConflict, map[string]string{"slug": slugTaken(p.Slug)})
+	case err != nil:
 		return h.fail(c, err)
 	}
 	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
 	return c.JSON(fiber.Map{
-		"savedAt": time.Now().UTC().Format(time.RFC3339),
-		"editUrl": "/admin/posts/" + p.Slug + "/" + p.Lang,
+		"savedAt":  time.Now().UTC().Format(time.RFC3339),
+		"editUrl":  "/admin/posts/" + p.Slug + "/" + p.Lang,
+		"category": p.Category,
 	})
 }
 
@@ -637,13 +665,18 @@ func (h *pages) adminAutosave(c *fiber.Ctx) error {
 	if len(errs) > 0 {
 		return autosaveError(c, fiber.StatusUnprocessableEntity, errs)
 	}
-	if err := h.cfg.Store.Update(c.UserContext(), p); err != nil {
+	ctx := c.UserContext()
+	msg, err := h.saveWithCategory(ctx, &p, form, func() error { return h.cfg.Store.Update(ctx, p) })
+	if msg != "" {
+		return autosaveError(c, fiber.StatusUnprocessableEntity, map[string]string{"category": msg})
+	}
+	if err != nil {
 		return h.fail(c, err)
 	}
 	if err := h.saveArticleMeta(c.UserContext(), p); err != nil {
 		return h.fail(c, err)
 	}
-	return c.JSON(fiber.Map{"savedAt": time.Now().UTC().Format(time.RFC3339)})
+	return c.JSON(fiber.Map{"savedAt": time.Now().UTC().Format(time.RFC3339), "category": p.Category})
 }
 
 func (h *pages) adminPreview(c *fiber.Ctx) error {
@@ -720,7 +753,7 @@ func (h *pages) renderEdit(c *fiber.Ctx, code int, st editState) error {
 	return h.render(c, code, h.cfg.Languages[0], nil, adminEditPage{
 		base: h.adminBase(c, "adminEdit"), Mode: st.mode, Status: string(st.status), Notice: st.notice,
 		DraftSavedAt: st.draftSavedAt, Translations: translations,
-		Categories: options, KnownTags: knownTags(all),
+		Categories: options, KnownTags: knownTags(all), AIEnabled: h.cfg.AI != nil, AIImages: h.cfg.AI.CanGenerateImages(),
 		Form: st.form, Errors: st.errs, Languages: h.cfg.Languages, OtherTranslations: others,
 	})
 }
@@ -728,6 +761,35 @@ func (h *pages) renderEdit(c *fiber.Ctx, code int, st editState) error {
 // ---- Validation -------------------------------------------------------
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+// slugify turns a name into a slug that matches slugPattern:
+// "Café & Crème, 2024!" -> "cafe-creme-2024". Used for new categories'
+// slugs; the editor's AI button makes article slugs the same way.
+func slugify(title string) string {
+	var b strings.Builder
+	hyphen := false
+	for _, r := range norm.NFKD.String(strings.ToLower(title)) {
+		switch {
+		case unicode.Is(unicode.Mn, r): // accents left over from decomposition
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			if hyphen && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			hyphen = false
+			b.WriteRune(r)
+		default:
+			hyphen = true
+		}
+	}
+	slug := b.String()
+	if len(slug) > 100 {
+		slug = slug[:100]
+		if i := strings.LastIndexByte(slug, '-'); i > 0 {
+			slug = slug[:i]
+		}
+	}
+	return slug
+}
 
 func readForm(c *fiber.Ctx) adminForm {
 	// Fiber's FormValue strings point into a buffer that is reused after the
@@ -740,12 +802,31 @@ func readForm(c *fiber.Ctx) adminForm {
 		Subtitle: v("subtitle"),
 		Summary:  v("summary"),
 		// Normalize Windows line endings from textareas so "\n\n" splits paragraphs.
-		Body:     strings.ReplaceAll(v("body"), "\r\n", "\n"),
-		Date:     v("date"),
-		Category: v("category"),
-		Tags:     v("tags"),
-		Cover:    v("cover"),
+		Body:             strings.ReplaceAll(v("body"), "\r\n", "\n"),
+		Date:             v("date"),
+		Category:         v("category"),
+		Tags:             v("tags"),
+		Cover:            v("cover"),
+		NewCategory:      readNewCategory(c),
+		ReplacesCategory: v("newCategoryReplaces"),
 	}
+}
+
+func slugTaken(slug string) string {
+	return "An article with the slug “" + slug + "” already exists in this language. Choose another slug."
+}
+
+// readNewCategory reads the "newCategory_<lang>" fields.
+func readNewCategory(c *fiber.Ctx) map[string]string {
+	names := map[string]string{}
+	c.Request().PostArgs().VisitAll(func(k, v []byte) {
+		if lang, ok := strings.CutPrefix(string(k), "newCategory_"); ok {
+			if name := strings.Join(strings.Fields(string(v)), " "); name != "" {
+				names[lang] = name
+			}
+		}
+	})
+	return names
 }
 
 // validate checks the form for saving with status. Drafts may be unfinished,
@@ -782,7 +863,7 @@ func (h *pages) validate(ctx context.Context, f adminForm, mode string, status p
 	if err != nil {
 		errs["date"] = "Enter a valid date."
 	}
-	if f.Category != "" {
+	if f.Category != "" && f.Category != newCategoryValue {
 		if _, err := h.cfg.Categories.Get(ctx, f.Category); err != nil {
 			errs["category"] = "Choose a category from the list."
 		}
@@ -794,6 +875,12 @@ func (h *pages) validate(ctx context.Context, f adminForm, mode string, status p
 	if f.Cover != "" {
 		if msg := imageURLProblem(f.Cover, "image"); msg != "" {
 			errs["cover"] = msg
+		}
+	}
+	if f.Category == newCategoryValue {
+		// Created by saveWithCategory, only once the article saves.
+		if msg := h.checkNewCategory(f.NewCategory); msg != "" {
+			errs["category"] = msg
 		}
 	}
 	return posts.Post{

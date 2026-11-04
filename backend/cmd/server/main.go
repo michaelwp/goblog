@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/michaelputong/blog/backend/internal/ai"
 	"github.com/michaelputong/blog/backend/internal/api"
 	"github.com/michaelputong/blog/backend/internal/auth"
 	"github.com/michaelputong/blog/backend/internal/categories"
@@ -23,6 +24,10 @@ import (
 	"github.com/michaelputong/blog/backend/internal/ssr"
 	"github.com/michaelputong/blog/backend/internal/web"
 )
+
+// version is set at build time (-ldflags "-X main.version=v1.4.0"): the git
+// tag for releases, `git describe` for local builds. It's shown in the footer.
+var version = "dev"
 
 // Usage:
 //
@@ -99,6 +104,16 @@ func main() {
 		log.Fatalf("category indexes: %v", err)
 	}
 	cancel()
+	log.Printf("version %s", version)
+	// Any provider's key works: the provider is recognised from the key.
+	aiClient := ai.New(os.Getenv("AI_API_KEY"), os.Getenv("AI_BASE_URL"), os.Getenv("AI_MODEL"), os.Getenv("AI_IMAGE_MODEL"))
+	if aiClient != nil {
+		images := "none"
+		if aiClient.CanGenerateImages() {
+			images = aiClient.Provider.ImageModel
+		}
+		log.Printf("AI suggestions: %s, model %s, images %s", aiClient.Provider.Name, aiClient.Provider.Model, images)
+	}
 	app := api.New(api.Config{Store: store, Categories: cats, Languages: languages, Logging: true})
 	web.Register(app, web.Config{
 		Store:       store,
@@ -109,6 +124,8 @@ func main() {
 		Renderer:    renderer,
 		Languages:   languages,
 		SiteURL:     os.Getenv("SITE_URL"),
+		AI:          aiClient,
+		Version:     version,
 	})
 
 	go func() {

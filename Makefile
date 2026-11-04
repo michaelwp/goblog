@@ -21,6 +21,10 @@ MONGO_IMAGE     ?= docker.io/library/mongo:8
 # Host port for the Mongo container; 27018 avoids clashing with a local mongod.
 MONGO_PORT      ?= 27018
 MONGODB_DB      ?= blog
+# Shown in the site footer: the latest tag, plus commits since and -dirty for
+# uncommitted changes (e.g. v1.4.0-3-g1252cee-dirty).
+VERSION         ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GO_LDFLAGS       = -X main.version=$(VERSION)
 
 .DEFAULT_GOAL := help
 
@@ -44,13 +48,13 @@ frontend: frontend/node_modules ## Build the React bundles into the Go embed dir
 
 .PHONY: build
 build: frontend ## Compile bin/blog with the frontend embedded
-	cd backend && go build -trimpath -o ../bin/$(APP_NAME) ./cmd/server
+	cd backend && go build -trimpath -ldflags="$(GO_LDFLAGS)" -o ../bin/$(APP_NAME) ./cmd/server
 
 .PHONY: run
 run: frontend ## Run the app locally (needs MongoDB; see `make mongo`)
 	@$(LOAD_ENV) cd backend && \
 		PORT=$${PORT:-$(PORT)} LANGUAGES=$${LANGUAGES:-$(LANGUAGES)} MONGODB_DB=$${MONGODB_DB:-$(MONGODB_DB)} \
-		MONGODB_URI=$${MONGODB_URI:-mongodb://localhost:$(MONGO_PORT)} go run ./cmd/server
+		MONGODB_URI=$${MONGODB_URI:-mongodb://localhost:$(MONGO_PORT)} go run -ldflags="$(GO_LDFLAGS)" ./cmd/server
 
 .PHONY: db-setup
 db-setup: frontend ## Create the collections, schema validators and indexes in MONGODB_URI (once, on a new database)
@@ -124,7 +128,7 @@ container-system:
 
 .PHONY: image
 image: container-system ## Build the app image with `container build`
-	container build --tag $(IMAGE) --file Dockerfile .
+	container build --tag $(IMAGE) --build-arg VERSION=$(VERSION) --file Dockerfile .
 
 .PHONY: network
 network: container-system
@@ -232,7 +236,7 @@ fly-secrets: ## Send MONGODB_URI and MONGODB_DB from .env to Fly (restarts the a
 
 .PHONY: fly-deploy
 fly-deploy: ## Build the Dockerfile on Fly's builders and deploy it (one machine)
-	$(FLY) deploy --ha=false
+	$(FLY) deploy --ha=false --build-arg VERSION=$(VERSION)
 
 .PHONY: fly-token
 fly-token: ## Create a deploy token and save it as the FLY_API_TOKEN GitHub secret for CI

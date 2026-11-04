@@ -150,6 +150,9 @@ jobs:
             fi
           fi
           echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          # Shown in the site footer: the tag for releases, else <branch>-<commit>.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version=$GITHUB_REF_NAME; else version=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -192,6 +195,7 @@ jobs:
           push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.release.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

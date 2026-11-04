@@ -1,27 +1,40 @@
 // Admin screens for managing articles. Every form posts to the Go server
 // and works without JavaScript; hydration only adds the delete confirmation.
-import { type FormEvent, type MouseEvent, type ReactNode, useRef, useState } from "react";
+import { createContext, type FormEvent, type MouseEvent, type ReactNode, useContext, useRef, useState } from "react";
+
+import { AppearanceMenu } from "../components/Appearance";
 
 import { countriesFor, flagEmoji } from "../lib/countries";
 import { formatDate } from "../lib/format";
 import { queryString } from "../lib/query";
+import { slugify } from "../lib/slug";
 import { useHydrated } from "../lib/useHydrated";
 import { getDictionary, type Locale } from "../lib/i18n";
-import type { AdminForm, BulkResult, BulkVerb, PageData, Post, PostStatus } from "../types";
+import type { AdminForm, BulkResult, BulkVerb, CategoryOption, PageData, Post, PostStatus, Theme } from "../types";
 import { addPasskey, passkeysSupported, signInWithPasskey, suggestPasskeyName } from "./passkey";
 import { PasswordFields } from "./PasswordField";
 import { ImageField, PhotoField } from "./PhotoField";
 import { RichEditor } from "./RichEditor";
-import { TagInput } from "./TagInput";
+import { parseTags } from "./TagInput";
+import { AIFieldButton, AIFieldStatus, AIPanel, Offer, useAIAssist } from "./aiAssist";
+import { NEW_CATEGORY, type Taxonomy, TaxonomyFields } from "./TaxonomyFields";
 import { type AutosaveState, useAutosave } from "./useAutosave";
 
 type Page<K extends PageData["page"]> = Extract<PageData, { page: K }>;
 
 type Section = "articles" | "categories" | "profile" | "password";
 
+// The visitor's appearance choice and the build's version, provided by
+// AdminApp so every screen's layout can show them without threading props.
+export const AdminThemeContext = createContext<Theme>("auto");
+export const AdminVersionContext = createContext("");
+
 function AdminLayout(props: { children: ReactNode; signedIn?: boolean; section?: Section }) {
   const { children, signedIn = true, section } = props;
-  const site = getDictionary("en").siteTitle;
+  const t = getDictionary("en");
+  const site = t.siteTitle;
+  const theme = useContext(AdminThemeContext);
+  const version = useContext(AdminVersionContext);
   return (
     <div className="admin">
       <header className="admin-header">
@@ -52,8 +65,10 @@ function AdminLayout(props: { children: ReactNode; signedIn?: boolean; section?:
             </form>
           </nav>
         )}
+        <AppearanceMenu t={t} initial={theme} />
       </header>
       <main className="admin-main">{children}</main>
+      {version && <footer className="admin-version">Version {version}</footer>}
     </div>
   );
 }
@@ -649,7 +664,7 @@ function LanguageSwitcher(props: {
 }
 
 export function AdminEdit(props: Page<"adminEdit">) {
-  const { mode, status, notice, form, errors, languages, otherTranslations, draftSavedAt, translations, categories, knownTags } = props;
+  const { mode, status, notice, form, errors, languages, otherTranslations, draftSavedAt, translations, categories, knownTags, aiEnabled, aiImages } = props;
   // A new article becomes an existing draft when autosave first creates it.
   const [created, setCreated] = useState<{ slug: string; lang: string } | null>(null);
   const isNew = mode === "new" && !created;
@@ -665,14 +680,89 @@ export function AdminEdit(props: Page<"adminEdit">) {
   const liveUrl = `/${articleLang}/posts/${slug}`;
   const lang = languageName(articleLang);
   const draftTime = useLocalTime(draftSavedAt);
+  // A brand-new article's slug is typed, or made from the title by the AI
+  // button (which keeps updating it until it's edited by hand).
+  const autoSlug = isNew && !isTranslation;
+  const [slugInput, setSlugInput] = useState(form.slug);
+  const [slugEdited, setSlugEdited] = useState(form.slug !== "");
+
+  // Category and tags, which AI suggestions can fill in.
+  const [taxonomy, setTaxonomy] = useState<Taxonomy>(() => ({
+    tags: parseTags(form.tags),
+    category: form.category,
+    newCategory: form.category === NEW_CATEGORY ? (form.newCategory ?? {}) : null,
+  }));
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>(categories);
+  const [cover, setCover] = useState(form.cover);
+  const [subtitle, setSubtitle] = useState(form.subtitle);
+  // The body editor's starting text; a new version reloads it (translations).
+  const [body, setBody] = useState({ value: form.body, version: 0 });
 
   const formRef = useRef<HTMLFormElement>(null);
-  const { state: autosave, saveNow, allowLeave } = useAutosave(formRef, isNew ? "/admin/new/autosave" : `${base}/autosave`, (editUrl) => {
-    const [, , , s, l] = editUrl.split("/"); // /admin/posts/<slug>/<lang>
-    setCreated({ slug: s, lang: l });
-    window.history.replaceState(null, "", editUrl);
-  });
+  const { state: autosave, saveNow, allowLeave } = useAutosave(
+    formRef,
+    isNew ? "/admin/new/autosave" : `${base}/autosave`,
+    (editUrl) => {
+      const [, , , s, l] = editUrl.split("/"); // /admin/posts/<slug>/<lang>
+      setCreated({ slug: s, lang: l });
+      window.history.replaceState(null, "", editUrl);
+    },
+    ({ category }, sent) => {
+      // Autosave created (or reused) the new category.
+      if (!category || category === NEW_CATEGORY || sent.get("category") !== NEW_CATEGORY || taxonomy.category !== NEW_CATEGORY) return;
+      const names = taxonomy.newCategory ?? {};
+      const unchanged = languages.every((l) => (sent.get(`newCategory_${l}`) ?? "").trim() === (names[l] ?? "").trim());
+      if (!unchanged) {
+        // Renamed while saving: keep the new names, and have the next save
+        // rename that category instead of creating another.
+        setTaxonomy((t) => ({ ...t, replaces: category }));
+        return;
+      }
+      // Pick it like any other category.
+      const option = { slug: category, name: names[languages[0]] || category };
+      setCategoryOptions((opts) => (opts.some((c) => c.slug === category) ? opts.map((c) => (c.slug === category ? option : c)) : [...opts, option]));
+      setTaxonomy((t) => ({ ...t, category, newCategory: null, replaces: undefined }));
+    },
+  );
   const hasDraftChanges = current === "published" && (!!draftSavedAt || autosave.kind === "saved");
+
+  // Other languages this article exists in, to translate from.
+  const otherVersions = languages.filter((l) => l !== articleLang && translations[l]);
+  // "✨ Translate from EN/ID" beside a field: just that field.
+  const translateButtons = (field: "title" | "summary" | "body") =>
+    otherVersions.map((l) => (
+      <AIFieldButton
+        key={l}
+        field={field}
+        busy={ai.busy}
+        label={`✨ Translate from ${l.toUpperCase()}`}
+        title={`Translate the ${languageName(l)} ${field === "body" ? "text" : field} into this version with AI`}
+        onClick={() => ai.translateField(field, l)}
+      />
+    ));
+  // AI suggestions (when AI_API_KEY is set), only when asked.
+  const hydrated = useHydrated();
+  const ai = {
+    enabled: aiEnabled && hydrated,
+    ...useAIAssist({
+      formRef,
+      taxonomy,
+      setTaxonomy,
+      cover,
+      setCover,
+      fillSlug: (title) => {
+        if (autoSlug && (!slugInput || !slugEdited)) setSlugInput(slugify(title));
+      },
+      slug,
+      lang: articleLang,
+      setBody: (value) => setBody((b) => ({ value, version: b.version + 1 })),
+      canGenerateImages: aiImages,
+      setSlug: (value) => {
+        setSlugInput(value);
+        setSlugEdited(false); // still the AI's: a later AI title may update it
+      },
+    }),
+  };
 
   const confirm = (message: string) => (e: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>) => {
     if (!window.confirm(message)) e.preventDefault();
@@ -811,15 +901,35 @@ export function AdminEdit(props: Page<"adminEdit">) {
             label="Slug"
             name="slug"
             error={errors.slug}
+            action={autoSlug && ai.enabled && <AIFieldButton field="slug" busy={ai.busy} title="Write a slug with AI" onClick={() => ai.suggestField("slug")} />}
+            status={<AIFieldStatus field="slug" status={ai.status} />}
             hint={
               isTranslation
                 ? "Translations share the slug of the article."
                 : isNew
-                  ? "Used in the URL, e.g. my-first-post. Translations share a slug."
+                  ? aiEnabled
+                    ? "Used in the URL, e.g. my-first-post. Type one, or let ✨ AI write it. Translations share a slug."
+                    : "Used in the URL, e.g. my-first-post. Translations share a slug."
                   : "The slug can't be changed."
             }
           >
-            <input name="slug" defaultValue={slug} readOnly={!isNew || isTranslation} required pattern="[a-z0-9]+(-[a-z0-9]+)*" autoComplete="off" />
+            {autoSlug ? (
+              <input
+                key="auto"
+                name="slug"
+                value={slugInput}
+                onChange={(e) => {
+                  setSlugInput(e.target.value);
+                  setSlugEdited(e.target.value !== "");
+                }}
+                onBlur={(e) => setSlugInput(slugify(e.target.value))}
+                required
+                pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                autoComplete="off"
+              />
+            ) : (
+              <input key="fixed" name="slug" defaultValue={slug} readOnly required pattern="[a-z0-9]+(-[a-z0-9]+)*" autoComplete="off" />
+            )}
           </Field>
           {isNew && !isTranslation ? (
             <Field label="Language" name="lang" error={errors.lang}>
@@ -850,46 +960,81 @@ export function AdminEdit(props: Page<"adminEdit">) {
           </Field>
         </div>
 
-        <div className="field-row field-row-2">
-          <Field
-            label="Category"
-            name="category"
-            error={errors.category}
-            hint={categories.length ? "Shared by all translations of this article." : "No categories yet: add them under Categories."}
-          >
-            <select name="category" defaultValue={form.category}>
-              <option value="">No category</option>
-              {categories.map((c) => (
-                <option key={c.slug} value={c.slug}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {/* Not a <label>: it would forward clicks to the chips' buttons. */}
-          <div className={errors.tags ? "field has-error" : "field"}>
-            <span className="field-label">Tags</span>
-            <TagInput defaultValue={form.tags} known={knownTags} invalid={!!errors.tags} />
-            <span className={errors.tags ? "field-error" : "field-hint"}>{errors.tags || "Up to 10, shared by all translations. Press Enter or comma after each."}</span>
+        {ai.enabled && (
+          <AIPanel
+            busy={ai.busy}
+            status={ai.status}
+            onSuggest={ai.suggest}
+            translateFrom={otherVersions}
+            onTranslate={ai.translate}
+          />
+        )}
+
+        <TaxonomyFields
+          value={taxonomy}
+          onChange={setTaxonomy}
+          categories={categoryOptions}
+          knownTags={knownTags}
+          languages={languages}
+          errors={errors}
+          tagsAction={ai.enabled && <AIFieldButton field="tags" busy={ai.busy} title="Suggest tags with AI (added to yours)" onClick={() => ai.suggestField("tags")} />}
+          tagsStatus={<AIFieldStatus field="tags" status={ai.status} />}
+        />
+
+        <Field
+          label="Title"
+          name="title"
+          error={errors.title}
+          action={
+            ai.enabled && (
+              <>
+                <AIFieldButton field="title" busy={ai.busy} title="Write a title with AI" onClick={() => ai.suggestField("title")} />
+                {translateButtons("title")}
+              </>
+            )
+          }
+          status={<AIFieldStatus field="title" status={ai.status} />}
+        >
+          <input
+            name="title"
+            defaultValue={form.title}
+            required
+            maxLength={200}
+          />
+        </Field>
+        <Offer text={ai.offers.title} onUse={() => ai.acceptOffer("title")} onDismiss={() => ai.dismissOffer("title")} />
+
+        {/* No subheading field any more: an older article keeps its own unless removed. */}
+        <input type="hidden" name="subtitle" value={subtitle} />
+        {subtitle && (
+          <div className="ai-offer">
+            <span className="ai-offer-label">Subheading:</span> <span className="ai-offer-text">{subtitle}</span>
+            <span className="ai-offer-actions">
+              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setSubtitle("")}>
+                Remove
+              </button>
+            </span>
           </div>
-        </div>
-
-        <Field label="Title" name="title" error={errors.title}>
-          <input name="title" defaultValue={form.title} required maxLength={200} />
-        </Field>
-
-        <Field label="Subheading (optional)" name="subtitle" error={errors.subtitle} hint="A short line shown under the title.">
-          <input name="subtitle" defaultValue={form.subtitle} maxLength={200} />
-        </Field>
+        )}
 
         <Field
           label="Summary (optional)"
           name="summary"
           error={errors.summary}
+          action={
+            ai.enabled && (
+              <>
+                <AIFieldButton field="summary" busy={ai.busy} title="Write a summary with AI" onClick={() => ai.suggestField("summary")} />
+                {translateButtons("summary")}
+              </>
+            )
+          }
+          status={<AIFieldStatus field="summary" status={ai.status} />}
           hint="One or two sentences that introduce the article: shown under the cover image, on the main page, in search results, and to search engines and social media."
         >
           <textarea name="summary" defaultValue={form.summary} rows={2} maxLength={400} />
         </Field>
+        <Offer text={ai.offers.summary} onUse={() => ai.acceptOffer("summary")} onDismiss={() => ai.dismissOffer("summary")} />
 
         <ImageField
           name="cover"
@@ -898,11 +1043,30 @@ export function AdminEdit(props: Page<"adminEdit">) {
           empty="No cover"
           hint="Shown above the article and as the picture when it's shared on social media; without one, the blog's logo is used. Shared by all translations. A wide image (1200×630) works best. PNG, JPEG, GIF or WebP, up to 5 MB."
           defaultValue={form.cover}
+          value={cover}
+          onChange={setCover}
           error={errors.cover}
           wide
+          actions={
+            ai.enabled && (
+              <button type="button" className="btn btn-quiet" onClick={ai.suggestCover} disabled={!!ai.busy}>
+                {ai.busy === "cover" ? (aiImages ? "Generating…" : "Picking…") : aiImages ? "✨ Generate with AI" : "✨ Pick from article"}
+              </button>
+            )
+          }
         />
+        <AIFieldStatus field="cover" status={ai.status} />
 
-        <EditorField label="Body" name="body" defaultValue={form.body} rows={20} error={errors.body} />
+        <EditorField
+          label="Body"
+          name="body"
+          defaultValue={body.value}
+          editorKey={body.version}
+          rows={20}
+          error={errors.body}
+          action={ai.enabled && translateButtons("body")}
+          status={<AIFieldStatus field="body" status={ai.status} />}
+        />
 
         {actions}
       </form>
@@ -949,25 +1113,56 @@ export function AdminEdit(props: Page<"adminEdit">) {
   );
 }
 
-function Field(props: { label: string; name: keyof AdminForm | string; error?: string; hint?: string; children: ReactNode }) {
-  const { label, error, hint, children } = props;
-  return (
+// action: a button shown beside the label (outside the <label>, so the
+// label still names the input); status: a message shown under the field.
+function Field(props: {
+  label: string;
+  name: keyof AdminForm | string;
+  error?: string;
+  hint?: string;
+  children: ReactNode;
+  action?: ReactNode;
+  status?: ReactNode;
+}) {
+  const { label, error, hint, children, action, status } = props;
+  const field = (
     <label className={error ? "field has-error" : "field"}>
       <span className="field-label">{label}</span>
       {children}
       {error ? <span className="field-error">{error}</span> : hint && <span className="field-hint">{hint}</span>}
+      {status}
     </label>
+  );
+  if (!action) return field;
+  return (
+    <div className="field-with-action">
+      {field}
+      <span className="field-action">{action}</span>
+    </div>
   );
 }
 
 // Not a <label>: the editor's toolbar buttons would become the label's target.
-function EditorField(props: { label: string; name: string; defaultValue: string; rows: number; error?: string }) {
-  const { label, name, defaultValue, rows, error } = props;
+// editorKey: change it to load a new defaultValue (e.g. an AI translation).
+function EditorField(props: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  rows: number;
+  error?: string;
+  editorKey?: number;
+  action?: ReactNode; // buttons beside the label
+  status?: ReactNode; // a message under the field
+}) {
+  const { label, name, defaultValue, rows, error, editorKey, action, status } = props;
   const hintId = `${name}-hint`;
   return (
     <div className={error ? "field has-error" : "field"}>
-      <span className="field-label">{label}</span>
-      <RichEditor name={name} defaultValue={defaultValue} rows={rows} invalid={!!error} describedBy={hintId} />
+      <span className="field-label-row">
+        <span className="field-label">{label}</span>
+        {action && <span className="field-label-actions">{action}</span>}
+      </span>
+      <RichEditor key={editorKey} name={name} defaultValue={defaultValue} rows={rows} invalid={!!error} describedBy={hintId} />
       {error ? (
         <span className="field-error" id={hintId}>
           {error}
@@ -977,6 +1172,7 @@ function EditorField(props: { label: string; name: string; defaultValue: string;
           Format with the toolbar or shortcuts (⌘B, ⌘I, ⌘K). Paste or drop images to upload them (PNG, JPEG, GIF or WebP, up to 5 MB).
         </span>
       )}
+      {status}
     </div>
   );
 }

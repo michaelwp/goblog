@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
+import { ImageViewer } from "./ImageViewer";
 import { uploadImage } from "./upload";
 
 // An image field: upload a file (stored with the blog's other images) or
@@ -14,6 +15,9 @@ export function ImageField({
   defaultValue,
   error,
   wide = false,
+  value,
+  onChange,
+  actions,
 }: {
   name: string;
   label: string;
@@ -23,12 +27,19 @@ export function ImageField({
   defaultValue: string;
   error?: string;
   wide?: boolean; // a landscape preview instead of a square one
+  // Optional: the parent holds the address (e.g. so the AI can set it).
+  value?: string;
+  onChange?: (url: string) => void;
+  actions?: ReactNode; // extra buttons beside Upload
 }) {
-  const [url, setUrl] = useState(defaultValue);
+  const [ownUrl, setOwnUrl] = useState(defaultValue);
+  const url = value ?? ownUrl;
+  const setUrl = onChange ?? setOwnUrl;
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [broken, setBroken] = useState(false);
   const [edited, setEdited] = useState(false); // the server's error is about the old value
+  const [viewing, setViewing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const message = uploadError || (edited ? "" : error);
 
@@ -57,14 +68,25 @@ export function ImageField({
     <div className={message ? "field has-error" : "field"}>
       <span className="field-label">{label}</span>
       <div className={wide ? "photo-field is-wide" : "photo-field"}>
-        <div className="photo-preview" aria-hidden="true">
-          {previewable && !broken ? <img src={url} alt="" onError={() => setBroken(true)} onLoad={() => setBroken(false)} /> : <span>{empty}</span>}
-        </div>
+        {previewable && !broken ? (
+          <button type="button" className="photo-preview is-viewable" onClick={() => setViewing(true)} title="View full size" aria-label={`View ${label.toLowerCase()} full size`}>
+            <img src={url} alt="" onError={() => setBroken(true)} onLoad={() => setBroken(false)} />
+            <span className="photo-preview-zoom" aria-hidden="true">
+              ⤢
+            </span>
+          </button>
+        ) : (
+          <div className="photo-preview" aria-hidden="true">
+            <span>{empty}</span>
+          </div>
+        )}
+        {viewing && <ImageViewer images={[{ src: url }]} onClose={() => setViewing(false)} />}
         <div className="photo-controls">
           <div className="photo-buttons">
             <button type="button" className="btn btn-primary" onClick={() => fileInput.current?.click()} disabled={uploading}>
               {uploading ? "Uploading…" : button}
             </button>
+            {actions}
             {url && (
               <button type="button" className="btn btn-quiet" onClick={() => change("")}>
                 Remove

@@ -920,6 +920,13 @@ mark {
 .admin-nav form {
   margin: 0;
 }
+/* Appearance toggle: an icon at the right end of the admin header. */
+.admin-nav {
+  margin-left: auto;
+}
+.admin-header .appearance-label {
+  display: none;
+}
 
 .admin-main {
   max-width: 60rem;
@@ -2835,4 +2842,226 @@ html:has(.admin) {
   .photo-field.is-wide .photo-preview {
     width: 100%;
   }
+}
+
+/* ==== Admin: AI tag and category suggestions ======================= */
+
+.ai-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: -0.25rem;
+}
+.ai-suggest .field-hint,
+.ai-suggest .field-error {
+  font-size: 0.8rem;
+}
+.new-category {
+  margin: 0;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.new-category legend {
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ==== Version number (site footer and admin) ======================= */
+
+.site-version {
+  font-variant-numeric: tabular-nums;
+}
+.admin-version {
+  max-width: 60rem;
+  margin: -3rem auto 0;
+  padding: 0 1.25rem 2rem;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+.ai-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin-top: -0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-size: 0.85rem;
+}
+.ai-offer-label {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.ai-offer-text {
+  flex: 1 1 16rem;
+}
+.ai-offer-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* ==== Admin: per-field AI buttons ================================== */
+
+.field-with-action {
+  position: relative;
+  min-width: 0;
+}
+.field-action {
+  position: absolute;
+  top: -0.2rem;
+  right: 0;
+  display: flex;
+  gap: 0.35rem;
+}
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.field-label-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.ai-field-button {
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ai-field-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ai-field-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.ai-field-status {
+  font-size: 0.8rem;
+}
+
+/* ==== Admin: full-size image viewer ================================ */
+
+button.photo-preview {
+  position: relative;
+  padding: 0;
+  border: 0;
+  cursor: zoom-in;
+}
+button.photo-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.photo-preview-zoom {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+button.photo-preview:hover .photo-preview-zoom,
+button.photo-preview:focus-visible .photo-preview-zoom {
+  opacity: 1;
+}
+.photo-field:not(.is-wide) .photo-preview-zoom {
+  right: 50%;
+  bottom: 50%;
+  transform: translate(50%, 50%);
+}
+
+.image-viewer {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+}
+.image-viewer::backdrop {
+  background: rgb(10 10 12 / 0.88);
+}
+.image-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+.image-viewer-stage {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  padding: 1.5rem 1rem 0.5rem;
+}
+.image-viewer-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  background: repeating-conic-gradient(#3a3a3e 0% 25%, #2a2a2e 0% 50%) 50% / 20px 20px; /* shows transparency */
+}
+.image-viewer-broken {
+  color: #ddd;
+}
+.image-viewer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem 1rem;
+  font-size: 0.85rem;
+}
+.image-viewer-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  min-width: 0;
+  color: #cfcfd4;
+  font-variant-numeric: tabular-nums;
+}
+.image-viewer-caption {
+  color: #fff;
+}
+.image-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.image-viewer-actions .btn {
+  border-color: rgb(255 255 255 / 0.25);
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+.image-viewer-actions .btn:hover {
+  background: rgb(255 255 255 / 0.18);
+  text-decoration: none;
+}
+.rich-content img {
+  cursor: zoom-in;
 }

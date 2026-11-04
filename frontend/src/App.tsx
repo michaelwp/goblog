@@ -47,14 +47,14 @@ function WithSiteName({ text, name }: { text: string; name: string }) {
   );
 }
 
-function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Extract<PageData, { page: "home" }>>) {
+function HomePage({ lang, theme, year, version, posts, groups, categories, t }: WithT<Extract<PageData, { page: "home" }>>) {
   const [featured] = posts;
   const onlyOther = groups.length === 1 && groups[0].category.slug === "";
   return (
     <Layout
       lang={lang}
       theme={theme}
-      year={year}
+      year={year} version={version}
       t={t}
       translations={otherLocales(lang, (l) => `/${l}`)}
       sidebar={<MainMenu lang={lang} t={t} categories={categories} />}
@@ -123,7 +123,7 @@ function HomePage({ lang, theme, year, posts, groups, categories, t }: WithT<Ext
   );
 }
 
-function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pendingChanges, url, related, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
+function ArticlePage({ lang, theme, year, version, post, availableLanguages, preview, pendingChanges, url, related, categories, t }: WithT<Extract<PageData, { page: "post" }>>) {
   const blocks = parseBody(post.body);
   const toc = sections(blocks);
   const translations = availableLanguages.filter((l) => l !== lang).map((l) => ({ lang: l, href: `/${l}/posts/${post.slug}` }));
@@ -136,7 +136,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
     <Layout
       lang={lang}
       theme={theme}
-      year={year}
+      year={year} version={version}
       t={t}
       translations={translations}
       sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}
@@ -249,7 +249,7 @@ function ArticlePage({ lang, theme, year, post, availableLanguages, preview, pen
 }
 
 function SearchPage(props: WithT<Extract<PageData, { page: "search" }>>) {
-  const { lang, theme, year, scope, query, tag, category, results, tags, filtered, categories, t } = props;
+  const { lang, theme, year, version, scope, query, tag, category, results, tags, filtered, categories, t } = props;
   const count = results.length;
   const catName = category ? categoryName(categories, category) || category : "";
   const title = scope === "category" ? format(t.categoryTitle, { name: catName }) : scope === "tag" ? format(t.tagTitle, { tag }) : t.searchResults;
@@ -270,7 +270,7 @@ function SearchPage(props: WithT<Extract<PageData, { page: "search" }>>) {
     <Layout
       lang={lang}
       theme={theme}
-      year={year}
+      year={year} version={version}
       t={t}
       query={query}
       translations={otherLocales(lang, params)}
@@ -366,10 +366,10 @@ function SearchPage(props: WithT<Extract<PageData, { page: "search" }>>) {
   );
 }
 
-function NotFoundPage({ lang, theme, year, categories, t }: WithT<Extract<PageData, { page: "notFound" }>>) {
+function NotFoundPage({ lang, theme, year, version, categories, t }: WithT<Extract<PageData, { page: "notFound" }>>) {
   const [before, after] = t.notFoundHint.split("{link}");
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
+    <Layout lang={lang} theme={theme} year={year} version={version} t={t} sidebar={<MainMenu lang={lang} t={t} categories={categories} />}>
       <TitleBar t={t} title={t.notFoundTitle} tab={t.article} />
       <div className="notice">
         <p>

@@ -9,6 +9,7 @@ import { Markdown } from "../components/Markdown";
 import { useHydrated } from "../lib/useHydrated";
 import { EditorFallback, type EditorProps } from "./EditorFallback";
 import { type PMNode, toMarkdown } from "./toMarkdown";
+import { ImageViewer, type ViewerImage } from "./ImageViewer";
 import { uploadImage } from "./upload";
 
 // Links the site will render (see safeHref in components/Markdown.tsx).
@@ -64,6 +65,20 @@ function VisualEditor({ name, defaultValue, rows = 16, invalid, describedBy, pla
   };
   const fileInput = useRef<HTMLInputElement>(null);
   const editorRef = useRef<Editor | null>(null);
+  // Full-size preview of the text's images, opened on one of them.
+  const [viewer, setViewer] = useState<{ images: ViewerImage[]; start: number } | null>(null);
+  const viewImageAt = (pos: number) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const images: ViewerImage[] = [];
+    let start = 0;
+    ed.state.doc.descendants((node, at) => {
+      if (node.type.name !== "image") return;
+      if (at === pos) start = images.length;
+      images.push({ src: String(node.attrs.src ?? ""), alt: String(node.attrs.alt ?? "") });
+    });
+    if (images.length) setViewer({ images, start });
+  };
 
   async function insertImages(files: File[], at?: number) {
     const images = files.filter((f) => f.type.startsWith("image/"));
@@ -114,6 +129,12 @@ function VisualEditor({ name, defaultValue, rows = 16, invalid, describedBy, pla
         "aria-multiline": "true",
         "aria-label": "Article body",
         ...(describedBy ? { "aria-describedby": describedBy } : {}),
+      },
+      // Double-clicking an image opens it full size.
+      handleDoubleClickOn: (_view, pos, node) => {
+        if (node.type.name !== "image") return false;
+        viewImageAt(pos);
+        return true;
       },
       handlePaste: (_view, event) => {
         const files = [...(event.clipboardData?.files ?? [])];
@@ -179,7 +200,8 @@ function VisualEditor({ name, defaultValue, rows = 16, invalid, describedBy, pla
       </div>
 
       {editor && linkRange && mode === "visual" && <LinkBar editor={editor} range={linkRange} onClose={() => setLinkRange(null)} />}
-      {editor && mode === "visual" && <ImageCaption editor={editor} />}
+      {editor && mode === "visual" && <ImageCaption editor={editor} onView={() => viewImageAt(editor.state.selection.from)} />}
+      {viewer && <ImageViewer images={viewer.images} start={viewer.start} onClose={() => setViewer(null)} />}
 
       <div hidden={mode !== "visual"} className="rich-surface" style={{ minHeight: `${rows * 1.7}rem` }}>
         <EditorContent editor={editor} />
@@ -368,8 +390,9 @@ function LinkBar({ editor, range, onClose }: { editor: Editor; range: LinkTarget
   );
 }
 
-// When an image is selected, edit its caption (also its alt text).
-function ImageCaption({ editor }: { editor: Editor }) {
+// When an image is selected, edit its caption (also its alt text), or view
+// it full size.
+function ImageCaption({ editor, onView }: { editor: Editor; onView: () => void }) {
   const image = useEditorState({
     editor,
     selector: ({ editor: e }) => (e.isActive("image") ? { alt: String(e.getAttributes("image").alt ?? "") } : null),
@@ -388,6 +411,9 @@ function ImageCaption({ editor }: { editor: Editor }) {
         onFocus={(e) => e.target.select()}
         onChange={(e) => editor.chain().updateAttributes("image", { alt: e.target.value }).run()}
       />
+      <button type="button" className="btn btn-quiet btn-sm" onClick={onView}>
+        View full size
+      </button>
       <button type="button" className="btn btn-quiet btn-sm" onClick={() => editor.chain().focus().deleteSelection().run()}>
         Remove image
       </button>

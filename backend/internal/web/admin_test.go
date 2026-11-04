@@ -33,6 +33,12 @@ func newAdminApp(t *testing.T, password string) (*fiber.App, *posts.MemoryStore)
 
 func newAdminAppWithLog(t *testing.T, password string) (*fiber.App, *posts.MemoryStore, *[]string) {
 	t.Helper()
+	return newAdminAppWith(t, password, nil)
+}
+
+// newAdminAppWith is newAdminApp with a chance to adjust the Config.
+func newAdminAppWith(t *testing.T, password string, adjust func(*Config)) (*fiber.App, *posts.MemoryStore, *[]string) {
+	t.Helper()
 	bundle, err := ServerBundle()
 	if err != nil {
 		t.Skipf("frontend not built (run npm run build in frontend/): %v", err)
@@ -52,11 +58,15 @@ func newAdminAppWithLog(t *testing.T, password string) (*fiber.App, *posts.Memor
 	}
 	var logs []string
 	app := fiber.New()
-	Register(app, Config{
+	cfg := Config{
 		Store: store, Profiles: &profile.MemoryStore{}, Categories: &categories.MemoryStore{}, Media: &media.MemoryStore{}, Credentials: creds, BcryptCost: bcrypt.MinCost,
 		Renderer: r, Languages: []string{"en", "id"},
 		Logf: func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
-	})
+	}
+	if adjust != nil {
+		adjust(&cfg)
+	}
+	Register(app, cfg)
 	return app, store, &logs
 }
 
@@ -422,5 +432,34 @@ func TestNewTranslationHasLanguageSwitcher(t *testing.T) {
 	}
 	if p, err := store.Get(t.Context(), "why-ssr", "id"); err != nil || p.Title != "Mengapa SSR" {
 		t.Errorf("id translation = %+v, %v", p, err)
+	}
+}
+
+func TestSlugify(t *testing.T) {
+	for in, want := range map[string]string{
+		"Hello, World!":             "hello-world",
+		"  Café & Crème, 2024!  ":   "cafe-creme-2024",
+		"Perjalanan ke Bali":        "perjalanan-ke-bali",
+		"日本語":                       "",
+		strings.Repeat("word ", 30): strings.TrimSuffix(strings.Repeat("word-", 20), "-"),
+	} {
+		if got := slugify(in); got != want {
+			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestVersionShown(t *testing.T) {
+	app, _, _ := newAdminAppWith(t, testPassword, func(c *Config) { c.Version = "v9.8.7" })
+	if res := send(t, app, "GET", "/en", nil); !strings.Contains(res.body, `class="site-version"> · v9.8.7</span>`) {
+		t.Errorf("public footer lacks the version")
+	}
+	if res := send(t, app, "GET", "/admin/login", nil); !strings.Contains(res.body, "Version <!-- -->v9.8.7") {
+		t.Errorf("admin lacks the version")
+	}
+	// Unset: no empty separator.
+	app, _ = newAdminApp(t, testPassword)
+	if res := send(t, app, "GET", "/en", nil); strings.Contains(res.body, "site-version") {
+		t.Errorf("version shown when unset")
 	}
 }

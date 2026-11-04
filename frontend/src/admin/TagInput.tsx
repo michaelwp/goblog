@@ -18,24 +18,28 @@ export function normalizeTag(s: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-const parse = (value: string) => [...new Set(value.split(",").map(normalizeTag).filter(Boolean))];
+export const MAX_TAG_COUNT = MAX_TAGS;
 
-// Tags for an article. The server renders (and the first client render
-// matches) a plain comma-separated input; after hydration it becomes chips
-// with suggestions from tags already in use. Either way the form submits
-// "tags" as a comma-separated list.
-export function TagInput({ defaultValue, known, invalid }: { defaultValue: string; known: string[]; invalid?: boolean }) {
+export const parseTags = (value: string) => [...new Set(value.split(",").map(normalizeTag).filter(Boolean))];
+
+// Tags for an article, held by the parent (so AI suggestions can add to
+// them). The server renders (and the first client render matches) a plain
+// comma-separated input; after hydration it becomes chips with suggestions
+// from tags already in use. Either way the form submits "tags" as a
+// comma-separated list.
+export function TagInput(props: { tags: string[]; onChange: (tags: string[]) => void; known: string[]; invalid?: boolean }) {
+  const { tags, known, invalid } = props;
   const hydrated = useHydrated();
-  const [tags, setTags] = useState(() => parse(defaultValue));
   const [text, setText] = useState("");
+  const setTags = (update: (cur: string[]) => string[]) => props.onChange(update(tags));
   const listId = useId();
 
   if (!hydrated) {
-    return <input type="text" name="tags" defaultValue={defaultValue} placeholder="go, security, web" aria-invalid={invalid || undefined} />;
+    return <input type="text" name="tags" defaultValue={tags.join(", ")} placeholder="go, security, web" aria-invalid={invalid || undefined} />;
   }
 
   const add = (raw: string) => {
-    const next = parse(raw).filter((t) => !tags.includes(t));
+    const next = parseTags(raw).filter((t) => !tags.includes(t));
     if (next.length) setTags((cur) => [...cur, ...next].slice(0, MAX_TAGS));
     setText("");
   };

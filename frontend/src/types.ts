@@ -33,7 +33,7 @@ export type NavCategory = { slug: string; name: string; count: number };
 export type TagCount = { tag: string; count: number };
 export type CategoryOption = { slug: string; name: string };
 
-type PageBase = { lang: Locale; theme: Theme; year: number; categories?: NavCategory[] };
+type PageBase = { lang: Locale; theme: Theme; year: number; version: string; categories?: NavCategory[] };
 
 // Pages of the public site, hydrated by app.js.
 export type PublicPageData = PageBase & (
@@ -100,6 +100,8 @@ export type AdminPageData = PageBase & (
       translations: Partial<Record<Locale, PostStatus | "edited">>; // existing translations of this article
       categories: CategoryOption[];
       knownTags: string[];
+      aiEnabled: boolean; // the editor can ask the AI for suggestions
+      aiImages: boolean; // ...and the AI can generate a cover image
       otherTranslations: Locale[];
       form: AdminForm;
       errors: Partial<Record<keyof AdminForm, string>>;
@@ -157,6 +159,7 @@ export type AdminForm = {
   category: string;
   tags: string; // comma-separated
   cover: string; // uploaded /media/ path or https:// address, "" for none
+  newCategory: Record<string, string> | null; // names of a category to create on save (category "__new")
 };
 
 // Mirrors passkeyView in backend/internal/web/passkey.go.

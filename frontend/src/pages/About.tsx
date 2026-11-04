@@ -10,7 +10,7 @@ type Props = Extract<PageData, { page: "about" }> & { t: Dictionary };
 
 // The blog owner's profile, laid out like a biography article: the name as
 // title, headline as the lead, bio sections with contents, and an infobox.
-export function AboutPage({ lang, theme, year, profile, categories, t }: Props) {
+export function AboutPage({ lang, theme, year, version, profile, categories, t }: Props) {
   const title = profile.name || t.aboutTitle;
   const translations = locales.filter((l) => l !== lang).map((l) => ({ lang: l, href: `/${l}/about` }));
   const blocks = parseBody(profile.bio);
@@ -21,7 +21,7 @@ export function AboutPage({ lang, theme, year, profile, categories, t }: Props) 
   const country = profile.country ? countryName(profile.country, lang) : "";
 
   return (
-    <Layout lang={lang} theme={theme} year={year} t={t} translations={translations} sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}>
+    <Layout lang={lang} theme={theme} year={year} version={version} t={t} translations={translations} sidebar={contents || <MainMenu lang={lang} t={t} categories={categories} />}>
       <TitleBar t={t} title={title} tab={t.about} />
       <p className="from-site">{t.fromSite}</p>
 

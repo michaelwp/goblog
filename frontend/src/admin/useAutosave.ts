@@ -21,8 +21,15 @@ function snapshot(form: HTMLFormElement): string {
 
 // Saves the form to `url` about once a minute while it has unsaved changes,
 // and warns before leaving the page with changes that haven't been saved.
-// `onCreated` receives the edit URL when autosave created a new article.
-export function useAutosave(form: RefObject<HTMLFormElement | null>, url: string, onCreated: (editUrl: string) => void) {
+// `onCreated` receives the edit URL when autosave created a new article;
+// `onSaved` receives every successful save's reply (e.g. the category it
+// created) and the form data that was saved.
+export function useAutosave(
+  form: RefObject<HTMLFormElement | null>,
+  url: string,
+  onCreated: (editUrl: string) => void,
+  onSaved?: (data: { category?: string }, sent: URLSearchParams) => void,
+) {
   const [state, setState] = useState<AutosaveState>({ kind: "idle" });
   const saved = useRef<string | null>(null);
   const lastAttempt = useRef(0); // set when the effect starts
@@ -33,9 +40,11 @@ export function useAutosave(form: RefObject<HTMLFormElement | null>, url: string
   // Latest url/onCreated for the long-lived effect below, updated after render.
   const urlRef = useRef(url);
   const onCreatedRef = useRef(onCreated);
+  const onSavedRef = useRef(onSaved);
   useEffect(() => {
     urlRef.current = url;
     onCreatedRef.current = onCreated;
+    onSavedRef.current = onSaved;
   });
   const saveNowRef = useRef<() => Promise<boolean>>(async () => true);
 
@@ -65,13 +74,14 @@ export function useAutosave(form: RefObject<HTMLFormElement | null>, url: string
           setState({ kind: "paused", message: "Autosave paused: you've been signed out. Sign in again in another tab." });
           return;
         }
-        const data = (await res.json()) as { savedAt?: string; editUrl?: string; error?: string };
+        const data = (await res.json()) as { savedAt?: string; editUrl?: string; category?: string; error?: string };
         if (!res.ok || !data.savedAt) {
           setState({ kind: "paused", message: data.error ?? "Autosave failed; it will retry." });
           return;
         }
         saved.current = current;
         setState({ kind: "saved", at: data.savedAt });
+        onSavedRef.current?.(data, new URLSearchParams(current));
         if (data.editUrl) {
           createdUrl.current = data.editUrl;
           onCreatedRef.current(data.editUrl);

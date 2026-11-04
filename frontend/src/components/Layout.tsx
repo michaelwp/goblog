@@ -9,6 +9,7 @@ type LayoutProps = {
   lang: Locale;
   theme: Theme;
   year: number;
+  version?: string; // this build's version, e.g. "v1.4.0"
   t: Dictionary;
   query?: string;
   // The same page in the site's other languages, for the header's language menu.
@@ -18,7 +19,7 @@ type LayoutProps = {
   children: ReactNode;
 };
 
-export function Layout({ lang, theme, year, t, query, translations = [], sidebar, footer, children }: LayoutProps) {
+export function Layout({ lang, theme, year, version, t, query, translations = [], sidebar, footer, children }: LayoutProps) {
   return (
     <div className="page">
       <a className="skip-link" href="#content">
@@ -48,7 +49,10 @@ export function Layout({ lang, theme, year, t, query, translations = [], sidebar
 
       <footer className="site-footer">
         {footer}
-        <p>{`goblog.dev © ${year}`}</p>
+        <p>
+          {`goblog.dev © ${year}`}
+          {version && <span className="site-version">{` · ${version}`}</span>}
+        </p>
       </footer>
     </div>
   );
