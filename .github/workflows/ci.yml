@@ -89,7 +89,10 @@ jobs:
 
   integration:
     name: Integration tests (MongoDB)
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: since its November 2026 image (Linux 6.19+), MongoDB
+    # 8 refuses to start there (https://jira.mongodb.org/browse/SERVER-121912).
+    # Move back once a MongoDB 8 release runs on newer kernels.
+    runs-on: ubuntu-22.04
     services:
       mongo:
         image: mongo:8
